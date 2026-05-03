@@ -1,0 +1,11 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const auth_middleware_1 = require("../middleware/auth.middleware");
+const documents_controller_1 = require("../controllers/documents.controller");
+const router = (0, express_1.Router)();
+router.get('/family-record', auth_middleware_1.protect, documents_controller_1.generateFamilyRecord);
+router.get('/individual-record', auth_middleware_1.protect, documents_controller_1.generateIndividualRecord);
+router.get('/marriage-certificate', auth_middleware_1.protect, documents_controller_1.generateMarriageCertificate);
+router.get('/death-report', auth_middleware_1.protect, documents_controller_1.generateDeathReport);
+exports.default = router;

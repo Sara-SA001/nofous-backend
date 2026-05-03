@@ -1,0 +1,202 @@
+datasource db {
+  provider = "postgresql"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// Enums
+enum Gender {
+  MALE
+  FEMALE
+}
+
+enum Religion {
+  MUSLIM
+  CHRISTIAN
+  OTHER
+}
+
+enum MaritalStatus {
+  SINGLE
+  MARRIED
+  DIVORCED
+  WIDOWED
+}
+
+enum MarriageStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  DIVORCED
+}
+
+enum RequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum LinkType {
+  FATHER_LINK
+  HUSBAND_LINK
+}
+
+// Models
+model User {
+  id Int @id @default(autoincrement())
+
+  nationalId      String  @unique @map("national_id")
+  firstName       String  @map("first_name")
+  nisba           String? @map("nisba")
+  fatherName      String  @map("father_name")
+  grandfatherName String? @map("grandfather_name")
+  motherName      String  @map("mother_name")
+  motherNisba     String? @map("mother_nisba")
+
+  dateOfBirth  DateTime @map("date_of_birth")
+  placeOfBirth String   @map("place_of_birth")
+
+  nationality        String
+  governorate        String
+  amanah             String?
+  registrationPlace  String  @map("registration_place")
+  registrationNumber String  @map("registration_number")
+
+  registrationDate DateTime  @default(now()) @map("registration_date")
+  issueDate        DateTime? @map("issue_date")
+
+  gender        Gender
+  religion      Religion
+  maritalStatus MaritalStatus @map("marital_status")
+
+  cardNumber String? @unique @map("card_number")
+  password   String
+  isAlive    Boolean @default(true) @map("is_alive")
+
+  personalPhoto String? @map("personal_photo")
+  idFrontPhoto  String? @map("id_front_photo")
+  idBackPhoto   String? @map("id_back_photo")
+
+  fatherId  Int? @map("father_id")
+  husbandId Int? @map("husband_id")
+
+  father   User?  @relation("FatherChildren", fields: [fatherId], references: [id], onDelete: SetNull)
+  children User[] @relation("FatherChildren")
+
+  husband User?  @relation("HusbandWives", fields: [husbandId], references: [id], onDelete: SetNull)
+  wives   User[] @relation("HusbandWives")
+
+  linkRequestsAsRequester  FamilyLinkRequest[] @relation("RequesterLinks")
+  linkRequestsAsTarget     FamilyLinkRequest[] @relation("TargetLinks")
+  marriagesAsHusband       MarriageInfo[]      @relation("HusbandMarriages")
+  marriagesAsWife          MarriageInfo[]      @relation("WifeMarriages")
+  deathRequestsAsRequester DeathRequest[]      @relation("RequesterDeathRequests")
+
+  deathRequests DeathRequest[]
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  @@map("users")
+}
+
+model MarriageInfo {
+  id        Int @id @default(autoincrement())
+  husbandId Int @map("husband_id")
+  wifeId    Int @map("wife_id")
+
+  marriageDate  DateTime?      @map("marriage_date")
+  marriagePlace String?        @map("marriage_place")
+  status        MarriageStatus @default(APPROVED)
+  notes         String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  husband User @relation("HusbandMarriages", fields: [husbandId], references: [id])
+  wife    User @relation("WifeMarriages", fields: [wifeId], references: [id])
+
+  checkedBy   Admin? @relation("CheckedByMarriage", fields: [checkedById], references: [id])
+  checkedById Int?   @map("checked_by_id")
+
+  @@unique([husbandId, wifeId])
+  @@map("marriage_info")
+}
+
+model DeathRequest {
+  id Int @id @default(autoincrement())
+
+  userId      Int @map("user_id") // المتوفى
+  requesterId Int @map("requester_id") // مقدم الطلب
+
+  status RequestStatus @default(PENDING)
+
+  deathDate  DateTime? @map("death_date")
+  deathPlace String?   @map("death_place")
+  notes      String?
+
+  // الوثائق المطلوبة
+  familyRecordUrl      String? @map("family_record_url")
+  deathAnnouncementUrl String? @map("death_announcement_url")
+  deathReportUrl       String? @map("death_report_url")
+
+  checkedById Int?      @map("checked_by_id")
+  checkedAt   DateTime? @map("checked_at")
+  adminNotes  String?   @map("admin_notes")
+
+  user      User   @relation(fields: [userId], references: [id])
+  requester User   @relation("RequesterDeathRequests", fields: [requesterId], references: [id])
+  checkedBy Admin? @relation(fields: [checkedById], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("death_requests")
+}
+
+model Admin {
+  id       Int     @id @default(autoincrement())
+  username String  @unique
+  email    String  @unique
+  password String
+  fullName String?
+  isActive Boolean @default(true)
+
+  checkedMarriages MarriageInfo[] @relation("CheckedByMarriage")
+  checkedDeaths    DeathRequest[]
+
+  checkedLinkRequests FamilyLinkRequest[] @relation("CheckedBy")
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+
+  @@map("admins")
+}
+
+model FamilyLinkRequest {
+  id Int @id @default(autoincrement())
+
+  requesterId Int           @map("requester_id")
+  targetId    Int           @map("target_id")
+  type        LinkType
+  status      RequestStatus @default(PENDING) // استخدم الـ Enum الموجود
+
+  document1Url String? @map("document1_url")
+  document2Url String? @map("document2_url")
+  notes        String?
+  adminNotes   String? @map("admin_notes")
+
+  checkedById Int?      @map("checked_by_id")
+  checkedAt   DateTime? @map("checked_at")
+
+  requester User   @relation("RequesterLinks", fields: [requesterId], references: [id])
+  target    User   @relation("TargetLinks", fields: [targetId], references: [id])
+  checkedBy Admin? @relation("CheckedBy", fields: [checkedById], references: [id])
+
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  marriageDate  DateTime?
+  marriagePlace String?
+
+  @@map("family_link_requests")
+}

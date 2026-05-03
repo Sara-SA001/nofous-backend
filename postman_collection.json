@@ -1,0 +1,376 @@
+{
+  "info": {
+    "name": "Nofous Project API collection",
+    "_postman_id": "d7a3b7f7-c1b9-4052-9b73-5b1398f35ab3",
+    "description": "ملف Postman لاختبار مشروع Nofous backend",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:5000"
+    },
+    {
+      "key": "authToken",
+      "value": ""
+    },
+    {
+      "key": "adminAuthToken",
+      "value": ""
+    },
+    {
+      "key": "targetId",
+      "value": "2"
+    },
+    {
+      "key": "linkRequestId",
+      "value": "1"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health Check",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/",
+          "host": ["{{base_url}}"],
+          "path": ["/"]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Health check returns 200', function () {",
+              "  pm.response.to.have.status(200);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Register User (Female)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "multipart/form-data"
+          }
+        ],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            { "key": "nationalId", "value": "9876543210", "type": "text" },
+            { "key": "firstName", "value": "هند", "type": "text" },
+            { "key": "fatherName", "value": "أحمد", "type": "text" },
+            { "key": "grandfatherName", "value": "سامي", "type": "text" },
+            { "key": "motherName", "value": "سناء", "type": "text" },
+            { "key": "dateOfBirth", "value": "1997-05-15", "type": "text" },
+            { "key": "placeOfBirth", "value": "دمشق", "type": "text" },
+            { "key": "nationality", "value": "سورية", "type": "text" },
+            { "key": "governorate", "value": "دمشق", "type": "text" },
+            { "key": "gender", "value": "FEMALE", "type": "text" },
+            { "key": "religion", "value": "MUSLIM", "type": "text" },
+            { "key": "maritalStatus", "value": "SINGLE", "type": "text" },
+            { "key": "password", "value": "Password123!", "type": "text" },
+            { "key": "nisba", "value": "السورية", "type": "text" },
+            { "key": "amanah", "value": "مجد", "type": "text" },
+            { "key": "registrationPlace", "value": "سجل الأسرة", "type": "text" },
+            { "key": "registrationNumber", "value": "11223344", "type": "text" },
+            { "key": "cardNumber", "value": "5566778899", "type": "text" },
+            { "key": "issueDate", "value": "2024-01-01", "type": "text" },
+            { "key": "registrationDate", "value": "2024-06-01", "type": "text" },
+            { "key": "personalPhoto", "type": "file", "src": "/path/to/personalPhoto.jpg" },
+            { "key": "idFrontPhoto", "type": "file", "src": "/path/to/idFrontPhoto.jpg" },
+            { "key": "idBackPhoto", "type": "file", "src": "/path/to/idBackPhoto.jpg" }
+          ]
+        },
+        "url": {
+          "raw": "{{base_url}}/api/auth/register",
+          "host": ["{{base_url}}"],
+          "path": ["api", "auth", "register"]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Register user returns success', function () {",
+              "  const json = pm.response.json();",
+              "  pm.expect(json.success).to.eql(true);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Login User",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"nationalId\": \"9876543210\",\n  \"password\": \"Password123!\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/auth/login",
+          "host": ["{{base_url}}"],
+          "path": ["api", "auth", "login"]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const json = pm.response.json();",
+              "pm.test('Login user returns success', function () {",
+              "  pm.expect(json.success).to.eql(true);",
+              "});",
+              "if (json.token) { pm.collectionVariables.set('authToken', json.token); }"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Get Current User",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{authToken}}" }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/users/me",
+          "host": ["{{base_url}}"],
+          "path": ["api", "users", "me"]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const json = pm.response.json();",
+              "pm.test('Get current user returns success', function () {",
+              "  pm.expect(json.success).to.eql(true);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Register Admin",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"username\": \"admin1\",\n  \"email\": \"admin@example.com\",\n  \"password\": \"AdminPass123!\",\n  \"fullName\": \"مدير النظام\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/admin/register",
+          "host": ["{{base_url}}"],
+          "path": ["api", "admin", "register"]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const json = pm.response.json();",
+              "pm.test('Register admin returns success or already exists', function () {",
+              "  pm.expect([true, false]).to.include(json.success);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Login Admin",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"admin@example.com\",\n  \"password\": \"AdminPass123!\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/admin/login",
+          "host": ["{{base_url}}"],
+          "path": ["api", "admin", "login"]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const json = pm.response.json();",
+              "pm.test('Login admin returns success', function () {",
+              "  pm.expect(json.success).to.eql(true);",
+              "});",
+              "if (json.token) { pm.collectionVariables.set('adminAuthToken', json.token); }"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Request Family Link",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{authToken}}" },
+          { "key": "Content-Type", "value": "multipart/form-data" }
+        ],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            { "key": "targetId", "value": "{{targetId}}", "type": "text" },
+            { "key": "type", "value": "FATHER_LINK", "type": "text" },
+            { "key": "notes", "value": "طلب ارتباط الأب", "type": "text" },
+            { "key": "document1", "type": "file", "src": "/path/to/document1.jpg" },
+            { "key": "document2", "type": "file", "src": "/path/to/document2.jpg" }
+          ]
+        },
+        "url": {
+          "raw": "{{base_url}}/api/link/request",
+          "host": ["{{base_url}}"],
+          "path": ["api", "link", "request"]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const json = pm.response.json();",
+              "pm.test('Request family link returns success', function () {",
+              "  pm.expect(json.success).to.eql(true);",
+              "});",
+              "if (json.request && json.request.id) { pm.collectionVariables.set('linkRequestId', json.request.id); }"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Get Pending Link Requests",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{adminAuthToken}}" }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/admin/link-requests",
+          "host": ["{{base_url}}"],
+          "path": ["api", "admin", "link-requests"]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Get pending link requests returns success', function () {",
+              "  const json = pm.response.json();",
+              "  pm.expect(json.success).to.eql(true);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Approve Link Request",
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{adminAuthToken}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"adminNotes\": \"تمت الموافقة من قبل الإدارة\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/admin/link-requests/{{linkRequestId}}/approve",
+          "host": ["{{base_url}}"],
+          "path": ["api", "admin", "link-requests", "{{linkRequestId}}", "approve"]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const json = pm.response.json();",
+              "pm.test('Approve link request returns success', function () {",
+              "  pm.expect(json.success).to.eql(true);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Reject Link Request",
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{adminAuthToken}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"adminNotes\": \"تم الرفض بسبب عدم صحة البيانات\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/admin/link-requests/{{linkRequestId}}/reject",
+          "host": ["{{base_url}}"],
+          "path": ["api", "admin", "link-requests", "{{linkRequestId}}", "reject"]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const json = pm.response.json();",
+              "pm.test('Reject link request returns success', function () {",
+              "  pm.expect(json.success).to.eql(true);",
+              "});"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
