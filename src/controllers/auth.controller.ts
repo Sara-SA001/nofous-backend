@@ -5,6 +5,8 @@ import { generateToken } from '../utils/jwt.utils';
 import { registerUserSchema, loginUserSchema } from '../validations/auth.validation';
 import upload from '../utils/upload';
 
+const getZodIssues = (error: any) => error.issues || error.errors || [];
+
 export const uploadUserPhotos = upload.fields([
   { name: 'personalPhoto', maxCount: 1 },
   { name: 'idFrontPhoto', maxCount: 1 },
@@ -137,11 +139,12 @@ export const registerUser = async (req: Request, res: Response) => {
 
   } catch (error: any) {
     if (error.name === 'ZodError') {
+      const issues = getZodIssues(error) || [];
       return res.status(400).json({
         success: false,
         message: 'خطأ في البيانات المدخلة',
-        errors: error.errors.map((err: any) => ({
-          field: err.path.join(' → '),
+        errors: (Array.isArray(issues) ? issues : []).map((err: any) => ({
+          field: err.path?.join(' → ') || 'unknown',
           message: err.message
         }))
       });
@@ -198,7 +201,10 @@ export const loginUser = async (req: Request, res: Response) => {
         gender: user.gender,
         maritalStatus: user.maritalStatus,
         fatherId: user.fatherId,
-        husbandId: user.husbandId
+        husbandId: user.husbandId,
+        personalPhoto: user.personalPhoto,
+        idFrontPhoto: user.idFrontPhoto,
+        idBackPhoto: user.idBackPhoto,
       },
       token
     });
@@ -208,7 +214,7 @@ export const loginUser = async (req: Request, res: Response) => {
       return res.status(400).json({
         success: false,
         message: 'خطأ في البيانات المدخلة',
-        errors: error.errors
+        errors: getZodIssues(error)
       });
     }
 

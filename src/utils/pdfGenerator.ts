@@ -23,6 +23,7 @@ export async function generatePDF(html: string, filename: string, landscape: boo
     const pdfBuffer = await page.pdf({
       format: 'A4',
       landscape: landscape,
+      preferCSSPageSize: true,
       printBackground: true,
       margin: { top: '12mm', right: '12mm', bottom: '12mm', left: '12mm' },
     });

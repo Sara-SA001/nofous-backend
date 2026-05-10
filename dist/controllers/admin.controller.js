@@ -8,6 +8,7 @@ const bcryptjs_1 = __importDefault(require("bcryptjs"));
 const prisma_1 = __importDefault(require("../utils/prisma"));
 const jwt_utils_1 = require("../utils/jwt.utils");
 const auth_validation_1 = require("../validations/auth.validation");
+const getZodIssues = (error) => error.issues || error.errors || [];
 const registerAdmin = async (req, res) => {
     try {
         const validatedData = auth_validation_1.registerAdminSchema.parse(req.body);
@@ -50,7 +51,7 @@ const registerAdmin = async (req, res) => {
             return res.status(400).json({
                 success: false,
                 message: 'خطأ في البيانات المدخلة',
-                errors: error.errors.map((err) => ({
+                errors: getZodIssues(error).map((err) => ({
                     field: err.path.join(' → '),
                     message: err.message
                 }))
@@ -100,7 +101,7 @@ const loginAdmin = async (req, res) => {
             return res.status(400).json({
                 success: false,
                 message: 'خطأ في البيانات المدخلة',
-                errors: error.errors.map((err) => ({
+                errors: getZodIssues(error).map((err) => ({
                     field: err.path.join(' → '),
                     message: err.message
                 }))

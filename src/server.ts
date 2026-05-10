@@ -7,6 +7,7 @@ import linkRoutes from './routes/link.routes';
 import adminRoutes from './routes/admin.routes';
 import deathRoutes from './routes/death.routes';
 import documentsRoutes from './routes/documents.routes';
+import { uploadsDir } from './utils/upload';
 
 dotenv.config();
 
@@ -24,7 +25,7 @@ app.use('/images', express.static('public/images'));
  
 
 // إضافة هذا السطر الجديد
-app.use('/uploads', express.static('uploads'));
+app.use('/uploads', express.static(uploadsDir));
 
 
 // Routes

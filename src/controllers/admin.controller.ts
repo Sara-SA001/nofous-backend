@@ -4,6 +4,8 @@ import prisma from '../utils/prisma';
 import { generateToken } from '../utils/jwt.utils';
 import { adminLoginSchema, registerAdminSchema } from '../validations/auth.validation';
 
+const getZodIssues = (error: any) => error.issues || error.errors || [];
+
 export const registerAdmin = async (req: Request, res: Response) => {
   try {
     const validatedData = registerAdminSchema.parse(req.body);
@@ -50,7 +52,7 @@ export const registerAdmin = async (req: Request, res: Response) => {
       return res.status(400).json({
         success: false,
         message: 'خطأ في البيانات المدخلة',
-        errors: error.errors.map((err: any) => ({
+        errors: getZodIssues(error).map((err: any) => ({
           field: err.path.join(' → '),
           message: err.message
         }))
@@ -105,7 +107,7 @@ export const loginAdmin = async (req: Request, res: Response) => {
       return res.status(400).json({
         success: false,
         message: 'خطأ في البيانات المدخلة',
-        errors: error.errors.map((err: any) => ({
+        errors: getZodIssues(error).map((err: any) => ({
           field: err.path.join(' → '),
           message: err.message
         }))
@@ -261,52 +263,168 @@ export const rejectLinkRequest = async (req: Request, res: Response) => {
   }
 };
 
-export const getAllDeathRequests = async (req: Request, res: Response) => {
+// ====================== جلب طلبات الوفاة للأدمن ======================
+export const getDeathRequests = async (req: Request, res: Response) => {
   try {
     const requests = await prisma.deathRequest.findMany({
-      where: { status: 'PENDING' },
+      where: { status: 'PENDING' },   // يمكنك إزالة هذا إذا أردت إظهار الكل
       include: {
-        user: { select: { firstName: true, nationalId: true } },
-        requester: { select: { firstName: true } }
+        requester: {
+          select: {
+            id: true,
+            firstName: true,
+            nationalId: true,
+          }
+        },
+        user: {   // المتوفى (target)
+          select: {
+            id: true,
+            firstName: true,
+            nationalId: true,
+            maritalStatus: true,
+            isAlive: true,
+          }
+        }
       },
       orderBy: { createdAt: 'desc' }
     });
 
-    res.json({ success: true, count: requests.length, requests });
+    res.json({
+      success: true,
+      requests
+    });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: 'حدث خطأ', error: error.message });
+    console.error(error);
+    res.status(500).json({
+      success: false,
+      message: 'حدث خطأ أثناء جلب طلبات الوفاة'
+    });
   }
 };
 
+// ====================== الموافقة على طلب الوفاة ======================
 export const approveDeathRequest = async (req: Request, res: Response) => {
   try {
-    const { requestId } = req.params;
+    const { id } = req.params;
     const adminId = req.user?.userId;
 
-    const request = await prisma.deathRequest.findUnique({
-      where: { id: Number(requestId) }
+    const deathRequest = await prisma.deathRequest.findUnique({
+      where: { id: Number(id) },
+      include: { user: true }
     });
 
-    if (!request) return res.status(404).json({ success: false, message: 'الطلب غير موجود' });
+    if (!deathRequest) {
+      return res.status(404).json({ success: false, message: 'طلب الوفاة غير موجود' });
+    }
 
-    // تحديث حالة الوفاة
-    await prisma.user.update({
-      where: { id: request.userId },
-      data: { isAlive: false }
-    });
+    if (deathRequest.status !== 'PENDING') {
+      return res.status(400).json({ success: false, message: 'تمت معالجة هذا الطلب مسبقاً' });
+    }
 
-    await prisma.deathRequest.update({
-      where: { id: Number(requestId) },
-      data: {
-        status: 'APPROVED',
-        checkedById: adminId,
-        checkedAt: new Date(),
-        adminNotes: req.body.adminNotes || 'تمت الموافقة'
+    const deceased = deathRequest.user;
+
+    // تحديث حالة الوفاة + تغيير الوضع العائلي إذا كان متزوجاً
+    await prisma.$transaction(async (tx) => {
+      // 1. تحديث طلب الوفاة
+      await tx.deathRequest.update({
+        where: { id: Number(id) },
+        data: {
+          status: 'APPROVED',
+          checkedById: adminId,
+          checkedAt: new Date(),
+        }
+      });
+
+      // 2. تحديث بيانات المتوفى
+      let newMaritalStatus = deceased.maritalStatus;
+
+      if (deceased.maritalStatus === 'MARRIED') {
+        newMaritalStatus = 'WIDOWED';   // أرمل / أرملة
+      }
+
+      await tx.user.update({
+        where: { id: deceased.id },
+        data: {
+          isAlive: false,
+          maritalStatus: newMaritalStatus,
+          updatedAt: new Date()
+        }
+      });
+
+      // 3. (اختياري) تحديث الزوج/الزوجة الباقي إلى أرمل/أرملة
+      if (deceased.husbandId) {
+        await tx.user.update({
+          where: { id: deceased.husbandId },
+          data: { maritalStatus: 'WIDOWED' }
+        });
+      }
+      if (deceased.fatherId) {
+        // يمكن إضافة منطق إضافي إذا لزم الأمر
       }
     });
 
-    res.json({ success: true, message: 'تمت الموافقة على طلب الوفاة' });
+    res.json({
+      success: true,
+      message: 'تمت الموافقة على طلب الوفاة وتحديث الحالة العائلية بنجاح'
+    });
+
   } catch (error: any) {
-    res.status(500).json({ success: false, message: 'حدث خطأ', error: error.message });
+    console.error(error);
+    res.status(500).json({
+      success: false,
+      message: 'حدث خطأ أثناء معالجة طلب الوفاة',
+      error: error.message
+    });
+  }
+};
+
+// ====================== رفض طلب الوفاة ======================
+export const rejectDeathRequest = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const adminId = req.user?.userId;
+
+    if (!adminId) {
+      return res.status(401).json({ success: false, message: 'غير مصرح لك بهذا الإجراء' });
+    }
+
+    const deathRequest = await prisma.deathRequest.findUnique({
+      where: { id: Number(id) },
+      include: { user: true }
+    });
+
+    if (!deathRequest) {
+      return res.status(404).json({ success: false, message: 'طلب الوفاة غير موجود' });
+    }
+
+    if (deathRequest.status !== 'PENDING') {
+      return res.status(400).json({ 
+        success: false, 
+        message: `لا يمكن رفض الطلب، حالته الحالية: ${deathRequest.status}` 
+      });
+    }
+
+    await prisma.deathRequest.update({
+      where: { id: Number(id) },
+      data: {
+        status: 'REJECTED',
+        checkedById: adminId,
+        checkedAt: new Date(),
+        adminNotes: req.body.adminNotes || null,   // يمكن للأدمن كتابة سبب الرفض
+      }
+    });
+
+    res.json({
+      success: true,
+      message: 'تم رفض طلب الوفاة بنجاح'
+    });
+
+  } catch (error: any) {
+    console.error('Reject Death Request Error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'حدث خطأ أثناء رفض الطلب',
+      error: error.message
+    });
   }
 };

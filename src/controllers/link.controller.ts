@@ -9,28 +9,29 @@ export const uploadLinkDocuments = upload.fields([
 
 export const requestFamilyLink = async (req: Request, res: Response) => {
   try {
-    const targetId = Number(req.body.targetId);
+    const targetNationalId = req.body.targetNationalId?.trim();
+    const targetId = req.body.targetId ? Number(req.body.targetId) : null;
     const type = req.body.type as 'FATHER_LINK' | 'HUSBAND_LINK';
     const notes = req.body.notes?.trim();
-
     const marriageDate = req.body.marriageDate;
     const marriagePlace = req.body.marriagePlace?.trim();
-
     const requesterId = req.user?.userId;
 
     if (!requesterId) {
       return res.status(401).json({ success: false, message: 'غير مصرح لك بالدخول' });
     }
 
-    if (!targetId || isNaN(targetId)) {
-      return res.status(400).json({ success: false, message: 'يجب إرسال targetId صالح' });
+    if (!targetNationalId && (!targetId || isNaN(targetId))) {
+      return res.status(400).json({
+        success: false,
+        message: 'يجب إدخال الرقم الوطني للشخص المراد الارتباط به'
+      });
     }
 
     if (!['FATHER_LINK', 'HUSBAND_LINK'].includes(type)) {
       return res.status(400).json({ success: false, message: 'نوع الارتباط غير صحيح' });
     }
 
-    // التحقق الإلزامي للزواج
     if (type === 'HUSBAND_LINK') {
       if (!marriageDate || !marriagePlace) {
         return res.status(400).json({
@@ -45,21 +46,33 @@ export const requestFamilyLink = async (req: Request, res: Response) => {
       }
     }
 
-    const targetUser = await prisma.user.findUnique({
-      where: { id: targetId }
-    });
+    const targetUser = targetNationalId
+      ? await prisma.user.findUnique({ where: { nationalId: targetNationalId } })
+      : await prisma.user.findUnique({ where: { id: targetId! } });
 
     if (!targetUser) {
-      return res.status(404).json({ success: false, message: 'المستخدم المستهدف غير موجود' });
+      return res.status(404).json({
+        success: false,
+        message: 'لا يوجد مستخدم بهذا الرقم الوطني'
+      });
+    }
+
+    if (targetUser.id === requesterId) {
+      return res.status(400).json({
+        success: false,
+        message: 'لا يمكن إرسال طلب ارتباط لنفس الحساب'
+      });
     }
 
     const files = req.files as { [fieldname: string]: Express.Multer.File[] } || {};
-
     const document1Url = files['document1']?.[0] ? `/uploads/${files['document1'][0].filename}` : null;
     const document2Url = files['document2']?.[0] ? `/uploads/${files['document2'][0].filename}` : null;
 
     if (!document1Url || !document2Url) {
-      return res.status(400).json({ success: false, message: 'يجب رفع صورتين من دفتر العائلة' });
+      return res.status(400).json({
+        success: false,
+        message: 'يجب رفع صورتين من دفتر العائلة'
+      });
     }
 
     const linkRequest = await prisma.familyLinkRequest.create({
@@ -88,12 +101,12 @@ export const requestFamilyLink = async (req: Request, res: Response) => {
         id: linkRequest.id,
         type: linkRequest.type,
         targetId: linkRequest.targetId,
+        targetNationalId: linkRequest.target.nationalId,
         targetName: linkRequest.target.firstName,
         marriageDate: linkRequest.marriageDate,
         marriagePlace: linkRequest.marriagePlace,
       }
     });
-
   } catch (error: any) {
     console.error('Link Request Error:', error);
     res.status(500).json({

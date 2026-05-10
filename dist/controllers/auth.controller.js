@@ -9,6 +9,7 @@ const prisma_1 = __importDefault(require("../utils/prisma"));
 const jwt_utils_1 = require("../utils/jwt.utils");
 const auth_validation_1 = require("../validations/auth.validation");
 const upload_1 = __importDefault(require("../utils/upload"));
+const getZodIssues = (error) => error.issues || error.errors || [];
 exports.uploadUserPhotos = upload_1.default.fields([
     { name: 'personalPhoto', maxCount: 1 },
     { name: 'idFrontPhoto', maxCount: 1 },
@@ -110,7 +111,7 @@ const registerUser = async (req, res) => {
             return res.status(400).json({
                 success: false,
                 message: 'خطأ في البيانات المدخلة',
-                errors: error.errors.map((err) => ({
+                errors: getZodIssues(error).map((err) => ({
                     field: err.path.join(' → '),
                     message: err.message
                 }))
@@ -171,7 +172,7 @@ const loginUser = async (req, res) => {
             return res.status(400).json({
                 success: false,
                 message: 'خطأ في البيانات المدخلة',
-                errors: error.errors
+                errors: getZodIssues(error)
             });
         }
         console.error('Login Error:', error);
