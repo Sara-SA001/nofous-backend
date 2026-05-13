@@ -267,7 +267,6 @@ export const rejectLinkRequest = async (req: Request, res: Response) => {
 export const getDeathRequests = async (req: Request, res: Response) => {
   try {
     const requests = await prisma.deathRequest.findMany({
-      where: { status: 'PENDING' },   // يمكنك إزالة هذا إذا أردت إظهار الكل
       include: {
         requester: {
           select: {
@@ -276,13 +275,14 @@ export const getDeathRequests = async (req: Request, res: Response) => {
             nationalId: true,
           }
         },
-        user: {   // المتوفى (target)
+        user: {  // ← هذا هو المتوفى (target)
           select: {
             id: true,
             firstName: true,
             nationalId: true,
             maritalStatus: true,
             isAlive: true,
+            gender: true,
           }
         }
       },
@@ -378,19 +378,22 @@ export const approveDeathRequest = async (req: Request, res: Response) => {
   }
 };
 
+
 // ====================== رفض طلب الوفاة ======================
 export const rejectDeathRequest = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const adminId = req.user?.userId;
+    const adminId = req.user?.userId;   // ← هذا هو مصدر المشكلة
 
     if (!adminId) {
-      return res.status(401).json({ success: false, message: 'غير مصرح لك بهذا الإجراء' });
+      return res.status(401).json({ 
+        success: false, 
+        message: 'غير مصرح لك بهذا الإجراء - يجب تسجيل الدخول' 
+      });
     }
 
     const deathRequest = await prisma.deathRequest.findUnique({
-      where: { id: Number(id) },
-      include: { user: true }
+      where: { id: Number(id) }
     });
 
     if (!deathRequest) {
@@ -400,7 +403,7 @@ export const rejectDeathRequest = async (req: Request, res: Response) => {
     if (deathRequest.status !== 'PENDING') {
       return res.status(400).json({ 
         success: false, 
-        message: `لا يمكن رفض الطلب، حالته الحالية: ${deathRequest.status}` 
+        message: 'لا يمكن رفض الطلب، حالته ليست قيد المراجعة' 
       });
     }
 
@@ -410,7 +413,6 @@ export const rejectDeathRequest = async (req: Request, res: Response) => {
         status: 'REJECTED',
         checkedById: adminId,
         checkedAt: new Date(),
-        adminNotes: req.body.adminNotes || null,   // يمكن للأدمن كتابة سبب الرفض
       }
     });
 
@@ -423,8 +425,7 @@ export const rejectDeathRequest = async (req: Request, res: Response) => {
     console.error('Reject Death Request Error:', error);
     res.status(500).json({
       success: false,
-      message: 'حدث خطأ أثناء رفض الطلب',
-      error: error.message
+      message: 'حدث خطأ أثناء رفض الطلب'
     });
   }
 };

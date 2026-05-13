@@ -53,6 +53,13 @@ export const protectAdmin = async (req: Request, res: Response, next: NextFuncti
         message: 'يجب أن تكون مسؤولاً للوصول إلى هذه الصفحة'
       });
     }
+    if (req.user?.role !== 'admin') {
+    return res.status(403).json({ 
+      success: false, 
+      message: 'غير مصرح لك بهذا الإجراء - يجب أن تكون أدمن' 
+    });
+  }
+  next();
 
     req.user = decoded;
     next();
