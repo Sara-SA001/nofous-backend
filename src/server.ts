@@ -14,6 +14,13 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+// Debug: Log all incoming requests
+app.use((req, res, next) => {
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`);
+  console.log('  Headers:', JSON.stringify(req.headers, null, 2));
+  next();
+});
+
 // Middleware
 app.use(cors({
   origin: 'http://localhost:3000',   // للـ Next.js frontend لاحقاً
@@ -22,7 +29,7 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use('/images', express.static('public/images'));
- 
+
 
 // إضافة هذا السطر الجديد
 app.use('/uploads', express.static(uploadsDir));
@@ -42,5 +49,8 @@ app.get('/', (req, res) => {
 });
 
 app.listen(PORT, () => {
+  console.log('=================================');
+  console.log('🚀 SERVER STARTED WITH NEW CODE');
   console.log(`✅ Server running on http://localhost:${PORT}`);
+  console.log('=================================');
 });

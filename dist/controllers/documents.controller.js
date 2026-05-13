@@ -12,16 +12,23 @@ const normalizeText = (value) => value?.toString().replace(/\s+/g, ' ').trim() |
 const formatCell = (value) => normalizeText(value) || '—';
 const formatName = (name, nisba) => `${normalizeText(name)}${nisba ? ' ' + normalizeText(nisba) : ''}`.trim();
 const formatDate = (value) => (value ? value.toISOString().split('T')[0] : '—');
-const toArabicReligion = (value) => value === 'MUSLIM' ? '����' : value === 'CHRISTIAN' ? '�����' : '���';
-const toArabicGender = (value) => (value === 'MALE' ? '���' : '����');
+const sortByOldest = (a, b) => {
+    const firstDate = a?.dateOfBirth ? new Date(a.dateOfBirth).getTime() : Number.MAX_SAFE_INTEGER;
+    const secondDate = b?.dateOfBirth ? new Date(b.dateOfBirth).getTime() : Number.MAX_SAFE_INTEGER;
+    if (firstDate !== secondDate)
+        return firstDate - secondDate;
+    return (a?.id || 0) - (b?.id || 0);
+};
+const toArabicReligion = (value) => value === 'MUSLIM' ? 'مسلم' : value === 'CHRISTIAN' ? 'مسيحي' : 'آخر';
+const toArabicGender = (value) => (value === 'MALE' ? 'ذكر' : 'أنثى');
 const toArabicMaritalStatus = (value, gender) => {
     if (value === 'MARRIED')
-        return gender === 'MALE' ? '�����' : '������';
+        return gender === 'MALE' ? 'متزوج' : 'متزوجة';
     if (value === 'DIVORCED')
-        return gender === 'MALE' ? '����' : '�����';
+        return gender === 'MALE' ? 'مطلق' : 'مطلقة';
     if (value === 'WIDOWED')
-        return gender === 'MALE' ? '����' : '�����';
-    return gender === 'MALE' ? '����' : '�����';
+        return gender === 'MALE' ? 'أرمل' : 'أرملة';
+    return gender === 'MALE' ? 'أعزب' : 'عزباء';
 };
 // ====================== 1. بيان عائلي (مع ملاحظات محسنة) ======================
 const generateFamilyRecord = async (req, res) => {
@@ -31,47 +38,33 @@ const generateFamilyRecord = async (req, res) => {
         if (!user)
             return res.status(404).json({ success: false, message: 'المستخدم غير موجود' });
         const transactionId = `NFS-FAMILY-${Date.now()}-${Math.floor(Math.random() * 100000)}`;
-        // جمع أفراد العائلة (ابقِ هذا الجزء كما هو عندك)
         const familyMembers = [];
         const pushUnique = (member) => {
             if (!member || familyMembers.some(m => m.id === member.id))
                 return;
             familyMembers.push(member);
         };
-        pushUnique(user);
-        if (user.maritalStatus === 'MARRIED') {
-            if (user.gender === 'MALE') {
-                const wives = await prisma_1.default.user.findMany({ where: { husbandId: user.id } });
-                wives.forEach(pushUnique);
-                const children = await prisma_1.default.user.findMany({ where: { fatherId: user.id } });
-                children.forEach(pushUnique);
-            }
-            else {
-                const husband = user.husbandId ? await prisma_1.default.user.findUnique({ where: { id: user.husbandId } }) : null;
-                pushUnique(husband);
-                if (husband) {
-                    const children = await prisma_1.default.user.findMany({ where: { fatherId: husband.id } });
-                    children.forEach(pushUnique);
-                }
-            }
+        let familyHead = user;
+        if (user.gender === 'MALE' && (user.maritalStatus === 'MARRIED' || user.maritalStatus === 'WIDOWED' || user.maritalStatus === 'DIVORCED')) {
+            familyHead = user;
         }
-        else {
-            const father = user.fatherId ? await prisma_1.default.user.findUnique({ where: { id: user.fatherId } }) : null;
-            pushUnique(father);
-            if (father) {
-                const mother = await prisma_1.default.user.findFirst({ where: { husbandId: father.id, gender: 'FEMALE' } });
-                pushUnique(mother);
-            }
-            if (user.fatherId) {
-                const siblings = await prisma_1.default.user.findMany({ where: { fatherId: user.fatherId, id: { not: user.id } } });
-                siblings.forEach(pushUnique);
-                const fatherWives = await prisma_1.default.user.findMany({ where: { husbandId: user.fatherId, gender: 'FEMALE' } });
-                fatherWives.forEach(pushUnique);
-            }
+        else if (user.husbandId) {
+            familyHead = await prisma_1.default.user.findUnique({ where: { id: user.husbandId } }) || user;
         }
-        const familyHead = familyMembers.find((member) => member?.id === user.id ||
-            member?.id === user.fatherId ||
-            member?.id === user.husbandId) || user;
+        else if (user.fatherId) {
+            familyHead = await prisma_1.default.user.findUnique({ where: { id: user.fatherId } }) || user;
+        }
+        pushUnique(familyHead);
+        const wives = await prisma_1.default.user.findMany({
+            where: { husbandId: familyHead.id, gender: 'FEMALE' },
+            orderBy: [{ registrationDate: 'asc' }, { id: 'asc' }],
+        });
+        wives.forEach(pushUnique);
+        const children = await prisma_1.default.user.findMany({
+            where: { fatherId: familyHead.id },
+            orderBy: [{ dateOfBirth: 'asc' }, { id: 'asc' }],
+        });
+        children.sort(sortByOldest).forEach(pushUnique);
         const familyMemberIds = familyMembers.map((member) => member.id);
         const approvedDeaths = await prisma_1.default.deathRequest.findMany({
             where: {
@@ -143,44 +136,45 @@ const generateFamilyRecord = async (req, res) => {
         <meta charset="utf-8">
         <title>بيان عائلي</title>
         <style>
-          @page { size: A4 landscape; margin: 12mm 10mm; }
+          @page { size: A4 landscape; margin: 6mm; }
           * { margin: 0; padding: 0; box-sizing: border-box; }
+          html, body { width: 100%; }
           body { 
             font-family: 'Amiri', Arial, sans-serif; 
-            padding: 20px; 
+            padding: 0; 
             background: white; 
             color: #1a1a1a; 
-            line-height: 1.5; 
-            font-size: 12.5px;
+            line-height: 1.25; 
+            font-size: 10.5px;
           }
           .header { 
             text-align: center; 
-            margin-bottom: 15px; 
-            padding-bottom: 10px; 
-            border-bottom: 3px solid #0b3d2e; 
+            margin-bottom: 6px; 
+            padding-bottom: 5px; 
+            border-bottom: 2px solid #0b3d2e; 
           }
-          .emblem { height: 70px; margin-bottom: 8px; }
-          h1 { font-size: 17px; color: #0b3d2e; margin: 5px 0; font-weight: 700; }
-          h2 { font-size: 14px; color: #333; }
-          h3 { font-size: 15px; color: #0b3d2e; font-weight: 700; }
+          .emblem { height: 42px; margin-bottom: 3px; }
+          h1 { font-size: 14px; color: #0b3d2e; margin: 2px 0; font-weight: 700; }
+          h2 { font-size: 11px; color: #333; }
+          h3 { font-size: 12px; color: #0b3d2e; font-weight: 700; }
 
           .record-meta {
             display: grid;
-            grid-template-columns: 1fr 120px;
-            gap: 12px;
+            grid-template-columns: 1fr 82px;
+            gap: 6px;
             align-items: stretch;
-            margin-bottom: 15px;
+            margin-bottom: 6px;
           }
           .family-info { 
-            padding: 10px; 
+            padding: 5px; 
             background: #f0e6d2; 
             border: 1px solid #0b3d2e; 
-            font-size: 13.5px; 
+            font-size: 10.5px; 
           }
           .qr-box {
             border: 1px solid #0b3d2e;
             background: #f9f5eb;
-            padding: 7px;
+            padding: 4px;
             text-align: center;
             display: flex;
             flex-direction: column;
@@ -189,12 +183,12 @@ const generateFamilyRecord = async (req, res) => {
             gap: 4px;
           }
           .qr-box img {
-            width: 86px;
-            height: 86px;
+            width: 56px;
+            height: 56px;
             border: 1px solid #444;
           }
           .qr-id {
-            font-size: 9px;
+            font-size: 7px;
             font-weight: bold;
             color: #0b3d2e;
             direction: ltr;
@@ -204,13 +198,13 @@ const generateFamilyRecord = async (req, res) => {
           table { 
             width: 100%; 
             border-collapse: collapse; 
-            margin: 15px 0; 
+            margin: 6px 0; 
           }
           th, td { 
             border: 1px solid #444; 
-            padding: 7px 8px; 
+            padding: 3px 4px; 
             text-align: right; 
-            font-size: 12px; 
+            font-size: 9.5px; 
           }
           th { 
             background: #e8dcc8; 
@@ -218,39 +212,39 @@ const generateFamilyRecord = async (req, res) => {
           }
 
           .footer { 
-            margin-top: 25px; 
+            margin-top: 6px; 
             text-align: center; 
-            font-size: 12.5px; 
+            font-size: 9.5px; 
             color: #444; 
             border-top: 1px solid #999; 
-            padding-top: 12px; 
+            padding-top: 5px; 
           }
           .signatures {
-            margin-top: 40px;
+            margin-top: 10px;
             display: flex;
             justify-content: space-between;
             align-items: flex-end;
             gap: 20px;
-            font-size: 13px;
+            font-size: 10px;
           }
           .signature-box {
             flex: 1;
             text-align: center;
             border-top: 1px solid #333;
-            padding-top: 8px;
+            padding-top: 4px;
           }
           .stamp {
-            width: 110px;
-            height: 110px;
+            width: 62px;
+            height: 62px;
             border: 3px double #8B0000;
             border-radius: 50%;
             display: flex;
             align-items: center;
             justify-content: center;
-            margin: 0 auto 8px;
+            margin: 0 auto 4px;
             color: #8B0000;
             font-weight: bold;
-            font-size: 13.5px;
+            font-size: 9px;
             transform: rotate(-8deg);
           }
         </style>
@@ -295,17 +289,17 @@ const generateFamilyRecord = async (req, res) => {
           <tbody>${rowsHtml}</tbody>
         </table>
 
-        <div class="signatures" style="margin-top: 45px; display: flex; justify-content: space-between; align-items: flex-end;">
+        <div class="signatures" style="margin-top: 10px; display: flex; justify-content: space-between; align-items: flex-end;">
           <div class="signature-box">
             توقيع صاحب العلاقة<br>
-            <span style="font-size: 12px; color: #555;">....................</span>
+            <span style="font-size: 9px; color: #555;">....................</span>
           </div>
-          <div class="signature-box" style="margin-top: 160px;">
+          <div class="signature-box">
             <div class="stamp">خاتم<br>السجل المدني</div>
           </div>
           <div class="signature-box">
             توقيع الموظف المختص<br>
-            <span style="font-size: 12px; color: #555;">....................</span>
+            <span style="font-size: 9px; color: #555;">....................</span>
           </div>
         </div>
 
@@ -341,37 +335,38 @@ const generateIndividualRecord = async (req, res) => {
         <meta charset="utf-8">
         <title>بيان قيد فردي مدني</title>
         <style>
-          @page { size: A4 portrait; margin: 15mm 12mm; }
+          @page { size: A4 portrait; margin: 6mm; }
           * { margin: 0; padding: 0; box-sizing: border-box; }
+          html, body { width: 100%; }
           body { 
             font-family: 'Amiri', Arial, sans-serif; 
             background: white; 
             color: #1a1a1a; 
-            line-height: 1.65; 
-            font-size: 13.5px;
+            line-height: 1.3; 
+            font-size: 11px;
           }
           .header { 
             text-align: center; 
-            margin-bottom: 20px; 
-            padding-bottom: 12px; 
-            border-bottom: 3px solid #0b3d2e; 
+            margin-bottom: 8px; 
+            padding-bottom: 6px; 
+            border-bottom: 2px solid #0b3d2e; 
           }
-          .emblem { height: 78px; margin-bottom: 8px; }
-          h1 { font-size: 18px; color: #0b3d2e; margin: 5px 0; font-weight: 700; }
-          h2 { font-size: 14px; color: #333; }
-          h3 { font-size: 16px; color: #0b3d2e; font-weight: 700; }
+          .emblem { height: 48px; margin-bottom: 4px; }
+          h1 { font-size: 15px; color: #0b3d2e; margin: 2px 0; font-weight: 700; }
+          h2 { font-size: 11px; color: #333; }
+          h3 { font-size: 13px; color: #0b3d2e; font-weight: 700; }
 
           .content { 
             display: grid; 
-            grid-template-columns: 1fr 195px; 
-            gap: 18px; 
-            margin-top: 15px; 
+            grid-template-columns: 1fr 135px; 
+            gap: 10px; 
+            margin-top: 8px; 
           }
           .main-content { grid-column: 1; }
           .sidebar { 
             grid-column: 2; 
-            border: 2px solid #444; 
-            padding: 12px; 
+            border: 1px solid #444; 
+            padding: 7px; 
             background: #f9f5eb; 
             text-align: center; 
             height: fit-content; 
@@ -379,9 +374,9 @@ const generateIndividualRecord = async (req, res) => {
           .photo-box { 
             width: 100%; 
             aspect-ratio: 3/4; 
-            border: 2px solid #555; 
+            border: 1px solid #555; 
             background: #f0f0f0; 
-            margin-bottom: 12px; 
+            margin-bottom: 6px; 
             overflow: hidden; 
           }
           .photo-box img { width: 100%; height: 100%; object-fit: cover; }
@@ -389,11 +384,11 @@ const generateIndividualRecord = async (req, res) => {
           table { 
             width: 100%; 
             border-collapse: collapse; 
-            margin-bottom: 18px; 
+            margin-bottom: 8px; 
           }
           th, td { 
             border: 1px solid #555; 
-            padding: 9px 10px; 
+            padding: 5px 7px; 
             text-align: right; 
           }
           th { 
@@ -403,7 +398,7 @@ const generateIndividualRecord = async (req, res) => {
           }
 
           .signatures {
-            margin-top: 45px;
+            margin-top: 12px;
             display: flex;
             justify-content: space-between;
             align-items: flex-end;
@@ -413,31 +408,31 @@ const generateIndividualRecord = async (req, res) => {
             flex: 1;
             text-align: center;
             border-top: 1px solid #333;
-            padding-top: 8px;
-            font-size: 13px;
+            padding-top: 5px;
+            font-size: 10.5px;
           }
           .stamp {
-            width: 110px;
-            height: 110px;
+            width: 68px;
+            height: 68px;
             border: 3px double #8B0000;
             border-radius: 50%;
             display: flex;
             align-items: center;
             justify-content: center;
-            margin: 0 auto 8px;
+            margin: 0 auto 4px;
             color: #8B0000;
             font-weight: bold;
-            font-size: 13.5px;
+            font-size: 9px;
             transform: rotate(-8deg);
           }
 
           .footer { 
-            margin-top: 35px; 
+            margin-top: 8px; 
             text-align: center; 
-            font-size: 12.5px; 
+            font-size: 10px; 
             color: #444; 
             border-top: 1px solid #999; 
-            padding-top: 10px; 
+            padding-top: 5px; 
           }
         </style>
       </head>
@@ -485,27 +480,27 @@ const generateIndividualRecord = async (req, res) => {
               ${user.personalPhoto ? `<img src="http://localhost:5000${user.personalPhoto}" alt="صورة شخصية" />` : '<span>لا توجد صورة</span>'}
             </div>
             
-            <div style="margin: 15px 0 8px;">
-              <img src="https://api.qrserver.com/v1/create-qr-code/?size=145x145&data=${transactionId}" alt="QR Code" style="border: 2px solid #444;"/>
+            <div style="margin: 8px 0 5px;">
+              <img src="https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${transactionId}" alt="QR Code" style="width: 82px; height: 82px; border: 1px solid #444;"/>
             </div>
-            <div style="font-size: 13px; font-weight: bold; color: #0b3d2e;">
+            <div style="font-size: 9px; font-weight: bold; color: #0b3d2e; word-break: break-all;">
               ${transactionId}
             </div>
           </div>
         </div>
 
         <!-- منطقة التوقيعات -->
-        <div class="signatures" style="margin-top: 50px; display: flex; justify-content: space-between; align-items: flex-end;">
+        <div class="signatures" style="margin-top: 12px; display: flex; justify-content: space-between; align-items: flex-end;">
           <div class="signature-box">
             توقيع صاحب العلاقة<br>
-            <span style="font-size: 12px; color: #555;">${user.firstName} ${user.nisba || ''}</span>
+            <span style="font-size: 9px; color: #555;">${user.firstName} ${user.nisba || ''}</span>
           </div>
-          <div class="signature-box"  style="margin-top: 70px;">
+          <div class="signature-box">
             <div class="stamp">خاتم<br>السجل المدني</div>
           </div>
           <div class="signature-box" >
             توقيع الموظف المختص<br>
-            <span style="font-size: 12px; color: #555;">....................</span>
+            <span style="font-size: 9px; color: #555;">....................</span>
           </div>
         </div>
 
@@ -609,36 +604,38 @@ const generateMarriageCertificate = async (req, res) => {
         <meta charset="utf-8">
         <title>بيان زواج</title>
         <style>
+          @page { size: A4 landscape; margin: 6mm; }
           * { margin: 0; padding: 0; box-sizing: border-box; }
-          body { font-family: 'Amiri', Arial, sans-serif; padding: 25px; background: white; color: #1a1a1a; display: flex; flex-direction: column; min-height: 100vh; }
+          html, body { width: 100%; }
+          body { font-family: 'Amiri', Arial, sans-serif; padding: 0; background: white; color: #1a1a1a; display: flex; flex-direction: column; min-height: 100vh; font-size: 10.5px; line-height: 1.25; }
           .content-wrapper { flex: 1; }
-          .header { text-align: center; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 2px solid #0b3d2e; position: relative; }
-          .header-qr { position: absolute; top: 0; right: 0; width: 90px; }
-          .header-qr img { width: 80px; height: 80px; border: 1px solid #999; }
-          .header-qr-label { font-size: 9px; color: #666; margin-top: 2px; }
-          .emblem { height: 75px; margin-bottom: 6px; }
-          h1 { font-size: 17px; color: #0b3d2e; margin: 4px 0; font-weight: 700; }
-          h2 { font-size: 14px; color: #333; margin: 2px 0; font-weight: 600; }
-          h3 { font-size: 16px; color: #0b3d2e; margin: 4px 0; font-weight: 700; }
-          .section-title { background: #0b3d2e; color: white; padding: 7px 10px; margin: 10px 0 8px 0; text-align: center; font-size: 15px; font-weight: 700; }
-          table { width: 100%; border-collapse: collapse; border-spacing: 0; margin-bottom: 10px; border: 1px solid #444; }
-          th, td { border: 1px solid #444; padding: 7px 8px; text-align: right; vertical-align: middle; line-height: 1.4; font-size: 13px; }
+          .header { text-align: center; margin-bottom: 6px; padding-bottom: 5px; border-bottom: 2px solid #0b3d2e; position: relative; }
+          .header-qr { position: absolute; top: 0; right: 0; width: 62px; }
+          .header-qr img { width: 56px; height: 56px; border: 1px solid #999; }
+          .header-qr-label { font-size: 7px; color: #666; margin-top: 1px; }
+          .emblem { height: 42px; margin-bottom: 3px; }
+          h1 { font-size: 14px; color: #0b3d2e; margin: 2px 0; font-weight: 700; }
+          h2 { font-size: 11px; color: #333; margin: 1px 0; font-weight: 600; }
+          h3 { font-size: 12px; color: #0b3d2e; margin: 2px 0; font-weight: 700; }
+          .section-title { background: #0b3d2e; color: white; padding: 4px 7px; margin: 6px 0 5px 0; text-align: center; font-size: 11px; font-weight: 700; }
+          table { width: 100%; border-collapse: collapse; border-spacing: 0; margin-bottom: 6px; border: 1px solid #444; }
+          th, td { border: 1px solid #444; padding: 4px 6px; text-align: right; vertical-align: middle; line-height: 1.25; font-size: 10px; }
           th { background: #e8dcc8; font-weight: 700; }
-          .footer { margin-top: auto; padding-top: 20px; text-align: center; border-top: 1px solid #999; font-size: 12px; color: #555; line-height: 1.5; }
-          .signatures { margin-top: 20px; display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; font-size: 12px; font-weight: 600; }
-          .signature-box { flex: 1; border-top: 1px solid #333; padding-top: 6px; text-align: center; }
+          .footer { margin-top: auto; padding-top: 6px; text-align: center; border-top: 1px solid #999; font-size: 9px; color: #555; line-height: 1.25; }
+          .signatures { margin-top: 8px; display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; font-size: 10px; font-weight: 600; }
+          .signature-box { flex: 1; border-top: 1px solid #333; padding-top: 4px; text-align: center; }
           .stamp {
-            width: 105px;
-            height: 105px;
+            width: 62px;
+            height: 62px;
             border: 3px double #8B0000;
             border-radius: 50%;
             display: flex;
             align-items: center;
             justify-content: center;
-            margin: 0 auto 8px;
+            margin: 0 auto 4px;
             color: #8B0000;
             font-weight: bold;
-            font-size: 12.5px;
+            font-size: 9px;
             transform: rotate(-8deg);
           }
         </style>
@@ -671,7 +668,7 @@ const generateMarriageCertificate = async (req, res) => {
           <tr><td>الدين</td><td>${husband.religion === 'MUSLIM' ? 'مسلم' : husband.religion === 'CHRISTIAN' ? 'مسيحي' : 'آخر'}</td><td>${wife.religion === 'MUSLIM' ? 'مسلم' : wife.religion === 'CHRISTIAN' ? 'مسيحي' : 'آخر'}</td></tr>
         </table>
 
-        <div class="section-title" style="margin-top: 20px;">بيانات عقد الزواج</div>
+        <div class="section-title" style="margin-top: 6px;">بيانات عقد الزواج</div>
         <table>
           <tr><th>تاريخ الزواج</th><td>${marriage.marriageDate ? marriage.marriageDate.toISOString().split('T')[0] : '—'}</td></tr>
           <tr><th>محل الزواج</th><td>${formatCell(marriage.marriagePlace)}</td></tr>
@@ -704,14 +701,25 @@ exports.generateMarriageCertificate = generateMarriageCertificate;
 const generateDeathReport = async (req, res) => {
     try {
         const requesterId = req.user?.userId;
-        const targetUserId = Number(req.query.userId || requesterId);
-        if (!requesterId || isNaN(targetUserId)) {
+        const targetNationalId = typeof req.query.nationalId === 'string'
+            ? req.query.nationalId.trim()
+            : typeof req.query.userId === 'string' && /^\d{10}$/.test(req.query.userId.trim())
+                ? req.query.userId.trim()
+                : null;
+        const targetUserId = targetNationalId
+            ? null
+            : req.query.userId
+                ? Number(req.query.userId)
+                : requesterId;
+        if (!requesterId || (!targetNationalId && (!targetUserId || isNaN(targetUserId)))) {
             return res.status(400).json({ success: false, message: 'بيانات الطلب غير صحيحة' });
         }
         const requester = await prisma_1.default.user.findUnique({ where: { id: requesterId } });
         if (!requester)
             return res.status(404).json({ success: false, message: 'مقدم الطلب غير موجود' });
-        const deceased = await prisma_1.default.user.findUnique({ where: { id: targetUserId } });
+        const deceased = targetNationalId
+            ? await prisma_1.default.user.findUnique({ where: { nationalId: targetNationalId } })
+            : await prisma_1.default.user.findUnique({ where: { id: targetUserId } });
         if (!deceased)
             return res.status(404).json({ success: false, message: 'الشخص المتوفى غير موجود' });
         // التحقق من وجود طلب وفاة معتمد
@@ -736,39 +744,40 @@ const generateDeathReport = async (req, res) => {
         <meta charset="utf-8">
         <title>تقرير وفاة</title>
         <style>
-          @page { size: A4 portrait; margin: 15mm 12mm; }
+          @page { size: A4 portrait; margin: 6mm; }
           * { margin: 0; padding: 0; box-sizing: border-box; }
+          html, body { width: 100%; }
           body { 
             font-family: 'Amiri', Arial, sans-serif; 
             background: white; 
             color: #1a1a1a; 
-            line-height: 1.65; 
-            font-size: 13.5px;
+            line-height: 1.3; 
+            font-size: 11px;
           }
-          .header { text-align: center; margin-bottom: 20px; padding-bottom: 12px; border-bottom: 3px solid #8B0000; }
-          .emblem { height: 78px; margin-bottom: 8px; }
-          h1 { font-size: 18px; color: #8B0000; margin: 5px 0; font-weight: 700; }
-          h3 { font-size: 16px; color: #8B0000; margin: 15px 0 8px 0; font-weight: 700; }
+          .header { text-align: center; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 2px solid #8B0000; }
+          .emblem { height: 48px; margin-bottom: 4px; }
+          h1 { font-size: 15px; color: #8B0000; margin: 2px 0; font-weight: 700; }
+          h3 { font-size: 13px; color: #8B0000; margin: 8px 0 5px 0; font-weight: 700; }
 
-          .content { display: grid; grid-template-columns: 1fr 195px; gap: 18px; margin-top: 15px; }
+          .content { display: grid; grid-template-columns: 1fr 135px; gap: 10px; margin-top: 8px; }
           .main-content { grid-column: 1; }
-          .sidebar { grid-column: 2; border: 2px solid #8B0000; padding: 12px; background: #fdf2f2; text-align: center; height: fit-content; }
-          .photo-box { width: 100%; aspect-ratio: 3/4; border: 2px solid #8B0000; background: #f0f0f0; margin-bottom: 12px; overflow: hidden; }
+          .sidebar { grid-column: 2; border: 1px solid #8B0000; padding: 7px; background: #fdf2f2; text-align: center; height: fit-content; }
+          .photo-box { width: 100%; aspect-ratio: 3/4; border: 1px solid #8B0000; background: #f0f0f0; margin-bottom: 6px; overflow: hidden; }
           .photo-box img { width: 100%; height: 100%; object-fit: cover; }
 
-          table { width: 100%; border-collapse: collapse; margin-bottom: 18px; }
-          th, td { border: 1px solid #555; padding: 9px 10px; text-align: right; }
+          table { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
+          th, td { border: 1px solid #555; padding: 5px 7px; text-align: right; }
           th { background: #f0d9d9; font-weight: 700; width: 37%; }
 
-          .signatures { margin-top: 45px; display: flex; justify-content: space-between; align-items: flex-end; gap: 20px; }
-          .signature-box { flex: 1; text-align: center; border-top: 1px solid #333; padding-top: 8px; font-size: 13px; }
+          .signatures { margin-top: 12px; display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; }
+          .signature-box { flex: 1; text-align: center; border-top: 1px solid #333; padding-top: 5px; font-size: 10.5px; }
           .stamp { 
-            width: 110px; height: 110px; border: 3px double #8B0000; border-radius: 50%; 
-            display: flex; align-items: center; justify-content: center; margin: 0 auto 8px;
-            color: #8B0000; font-weight: bold; font-size: 13.5px; transform: rotate(-8deg);
+            width: 68px; height: 68px; border: 3px double #8B0000; border-radius: 50%; 
+            display: flex; align-items: center; justify-content: center; margin: 0 auto 4px;
+            color: #8B0000; font-weight: bold; font-size: 9px; transform: rotate(-8deg);
           }
 
-          .footer { margin-top: 35px; text-align: center; font-size: 12.5px; color: #444; border-top: 1px solid #999; padding-top: 10px; }
+          .footer { margin-top: 8px; text-align: center; font-size: 10px; color: #444; border-top: 1px solid #999; padding-top: 5px; }
         </style>
       </head>
       <body>
@@ -796,7 +805,7 @@ const generateDeathReport = async (req, res) => {
               <tr><th>الدين</th><td>${deceased.religion === 'MUSLIM' ? 'مسلم' : deceased.religion === 'CHRISTIAN' ? 'مسيحي' : 'آخر'}</td></tr>
             </table>
 
-            <h3 style="margin: 25px 0 10px; color: #8B0000;">بيانات الوفاة</h3>
+            <h3 style="margin: 8px 0 5px; color: #8B0000;">بيانات الوفاة</h3>
             <table>
               <tr><th>تاريخ الوفاة</th><td>${deathRequest.deathDate ? deathRequest.deathDate.toISOString().split('T')[0] : formatDate(deathRequest.checkedAt)}</td></tr>
               <tr><th>مكان الوفاة</th><td>${deathRequest.deathPlace || '—'}</td></tr>
@@ -807,16 +816,16 @@ const generateDeathReport = async (req, res) => {
             <div class="photo-box">
               ${deceased.personalPhoto ? `<img src="http://localhost:5000${deceased.personalPhoto}" alt="صورة" />` : '<span>لا توجد صورة</span>'}
             </div>
-            <div style="margin: 15px 0 8px;">
-              <img src="https://api.qrserver.com/v1/create-qr-code/?size=145x145&data=${transactionId}" alt="QR"/>
+            <div style="margin: 8px 0 5px;">
+              <img src="https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${transactionId}" alt="QR" style="width: 82px; height: 82px;"/>
             </div>
-            <div style="font-size: 13px; font-weight: bold; color: #8B0000;">${transactionId}</div>
+            <div style="font-size: 9px; font-weight: bold; color: #8B0000; word-break: break-all;">${transactionId}</div>
           </div>
         </div>
 
-        <div class="signatures" style="margin-top: 45px;">
+        <div class="signatures" style="margin-top: 10px;">
           <div class="signature-box">توقيع صاحب العلاقة<br><span style="color:#555;">${requester.firstName} ${requester.nisba || ''}</span></div>
-          <div class="signature-box"><div class="stamp" style="margin-top: 45px;">خاتم<br>السجل المدني</div></div>
+          <div class="signature-box"><div class="stamp">خاتم<br>السجل المدني</div></div>
           <div class="signature-box">توقيع الموظف المختص<br><span style="color:#555;">....................</span></div>
         </div>
 

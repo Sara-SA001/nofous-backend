@@ -108,11 +108,12 @@ const registerUser = async (req, res) => {
     }
     catch (error) {
         if (error.name === 'ZodError') {
+            const issues = getZodIssues(error) || [];
             return res.status(400).json({
                 success: false,
                 message: 'خطأ في البيانات المدخلة',
-                errors: getZodIssues(error).map((err) => ({
-                    field: err.path.join(' → '),
+                errors: (Array.isArray(issues) ? issues : []).map((err) => ({
+                    field: err.path?.join(' → ') || 'unknown',
                     message: err.message
                 }))
             });
@@ -162,7 +163,10 @@ const loginUser = async (req, res) => {
                 gender: user.gender,
                 maritalStatus: user.maritalStatus,
                 fatherId: user.fatherId,
-                husbandId: user.husbandId
+                husbandId: user.husbandId,
+                personalPhoto: user.personalPhoto,
+                idFrontPhoto: user.idFrontPhoto,
+                idBackPhoto: user.idBackPhoto,
             },
             token
         });

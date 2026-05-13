@@ -27,6 +27,7 @@ exports.protect = protect;
 const protectAdmin = async (req, res, next) => {
     try {
         const authHeader = req.headers.authorization;
+        console.log('protectAdmin - authHeader:', authHeader ? 'exists' : 'missing');
         if (!authHeader || !authHeader.startsWith('Bearer ')) {
             return res.status(401).json({
                 success: false,
@@ -35,7 +36,9 @@ const protectAdmin = async (req, res, next) => {
         }
         const token = authHeader.split(' ')[1];
         const decoded = (0, jwt_utils_1.verifyToken)(token);
+        console.log('protectAdmin - decoded token:', decoded);
         if (decoded.role !== 'admin') {
+            console.log('protectAdmin - role check failed:', decoded.role);
             return res.status(403).json({
                 success: false,
                 message: 'يجب أن تكون مسؤولاً للوصول إلى هذه الصفحة'
@@ -45,6 +48,7 @@ const protectAdmin = async (req, res, next) => {
         next();
     }
     catch (error) {
+        console.error('protectAdmin - error:', error);
         return res.status(401).json({
             success: false,
             message: 'توكن غير صالح أو منتهي الصلاحية'

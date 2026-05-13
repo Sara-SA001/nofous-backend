@@ -201,10 +201,7 @@ export const loginUser = async (req: Request, res: Response) => {
         gender: user.gender,
         maritalStatus: user.maritalStatus,
         fatherId: user.fatherId,
-        husbandId: user.husbandId,
-        personalPhoto: user.personalPhoto,
-        idFrontPhoto: user.idFrontPhoto,
-        idBackPhoto: user.idBackPhoto,
+        husbandId: user.husbandId
       },
       token
     });

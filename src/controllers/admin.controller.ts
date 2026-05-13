@@ -120,6 +120,20 @@ export const loginAdmin = async (req: Request, res: Response) => {
 
 export const getAllLinkRequests = async (req: Request, res: Response) => {
   try {
+    console.log('Fetching all link requests...');
+
+    // First, check all requests regardless of status
+    const allRequests = await prisma.familyLinkRequest.findMany({
+      include: {
+        requester: { select: { id: true, firstName: true, nationalId: true } },
+        target: { select: { id: true, firstName: true, nationalId: true } }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    console.log('All requests in database:', allRequests.length, allRequests.map(r => ({ id: r.id, status: r.status, type: r.type })));
+
+    // Then get only pending ones
     const requests = await prisma.familyLinkRequest.findMany({
       where: { status: 'PENDING' },
       include: {
@@ -129,24 +143,60 @@ export const getAllLinkRequests = async (req: Request, res: Response) => {
       orderBy: { createdAt: 'desc' }
     });
 
+    console.log('Pending requests:', requests.length);
+
     res.json({
       success: true,
       count: requests.length,
       requests
     });
   } catch (error: any) {
+    console.error('Error fetching link requests:', error);
     res.status(500).json({ success: false, message: 'حدث خطأ', error: error.message });
+  }
+};
+
+// ====================== جلب المستخدمين للأدمن ======================
+export const getAllUsers = async (req: Request, res: Response) => {
+  try {
+    const users = await prisma.user.findMany({
+      select: {
+        id: true,
+        nationalId: true,
+        firstName: true,
+        nisba: true,
+        fatherName: true,
+        gender: true,
+        maritalStatus: true,
+        isAlive: true,
+        createdAt: true,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    res.json({
+      success: true,
+      count: users.length,
+      users,
+    });
+  } catch (error: any) {
+    console.error('Error fetching users:', error);
+    res.status(500).json({
+      success: false,
+      message: 'حدث خطأ أثناء جلب قائمة المستخدمين',
+      error: error.message,
+    });
   }
 };
 
 // ====================== الموافقة على طلب الارتباط ======================
 export const approveLinkRequest = async (req: Request, res: Response) => {
   try {
-    const { requestId } = req.params;
+    const { id } = req.params;
     const adminId = req.user?.userId;
 
     const linkRequest = await prisma.familyLinkRequest.findUnique({
-      where: { id: Number(requestId) },
+      where: { id: Number(id) },
       include: {
         requester: true,
         target: true
@@ -191,7 +241,7 @@ export const approveLinkRequest = async (req: Request, res: Response) => {
         where: { id: husband.id },
         data: { maritalStatus: 'MARRIED' }
       });
-    } 
+    }
     // ====================== حالة أب ======================
     else if (linkRequest.type === 'FATHER_LINK') {
       const child = linkRequest.requester;
@@ -205,7 +255,7 @@ export const approveLinkRequest = async (req: Request, res: Response) => {
 
     // تحديث حالة الطلب
     await prisma.familyLinkRequest.update({
-      where: { id: Number(requestId) },
+      where: { id: Number(id) },
       data: {
         status: 'APPROVED',
         checkedById: adminId,
@@ -214,8 +264,8 @@ export const approveLinkRequest = async (req: Request, res: Response) => {
 
     res.json({
       success: true,
-      message: linkRequest.type === 'HUSBAND_LINK' 
-        ? 'تمت الموافقة على طلب الزواج وإنشاء سجل الزواج بنجاح' 
+      message: linkRequest.type === 'HUSBAND_LINK'
+        ? 'تمت الموافقة على طلب الزواج وإنشاء سجل الزواج بنجاح'
         : 'تمت الموافقة على طلب الارتباط بنجاح',
     });
 
@@ -231,25 +281,33 @@ export const approveLinkRequest = async (req: Request, res: Response) => {
 
 export const rejectLinkRequest = async (req: Request, res: Response) => {
   try {
-    const { requestId } = req.params;
+    const { id } = req.params;
     const adminId = req.user?.userId;
 
     if (!adminId) {
       return res.status(403).json({ success: false, message: 'يجب أن تكون مسؤولاً لتنفيذ هذه العملية' });
     }
 
-    const admin = await prisma.admin.findUnique({ where: { id: adminId } });
-    if (!admin) {
-      return res.status(403).json({ success: false, message: 'يجب أن تكون مسؤولاً لتنفيذ هذه العملية' });
+    const linkRequest = await prisma.familyLinkRequest.findUnique({
+      where: { id: Number(id) }
+    });
+
+    if (!linkRequest) {
+      return res.status(404).json({ success: false, message: 'طلب الارتباط غير موجود' });
     }
 
+    if (linkRequest.status !== 'PENDING') {
+      return res.status(400).json({ success: false, message: 'هذا الطلب تمت معالجته مسبقاً' });
+    }
+
+    const admin = await prisma.admin.findUnique({ where: { id: adminId } });
     const updatedRequest = await prisma.familyLinkRequest.update({
-      where: { id: Number(requestId) },
+      where: { id: Number(id) },
       data: {
         status: 'REJECTED',
-        checkedById: adminId,
+        ...(admin ? { checkedById: admin.id } : {}),
         checkedAt: new Date(),
-        adminNotes: req.body.adminNotes || 'تم الرفض'
+        adminNotes: req.body?.adminNotes || 'تم الرفض'
       }
     });
 
@@ -259,6 +317,7 @@ export const rejectLinkRequest = async (req: Request, res: Response) => {
       request: updatedRequest
     });
   } catch (error: any) {
+    console.error('Reject Link Request Error:', error);
     res.status(500).json({ success: false, message: 'حدث خطأ أثناء الرفض', error: error.message });
   }
 };
@@ -266,6 +325,7 @@ export const rejectLinkRequest = async (req: Request, res: Response) => {
 // ====================== جلب طلبات الوفاة للأدمن ======================
 export const getDeathRequests = async (req: Request, res: Response) => {
   try {
+    console.log('Fetching death requests...');
     const requests = await prisma.deathRequest.findMany({
       include: {
         requester: {
@@ -289,12 +349,22 @@ export const getDeathRequests = async (req: Request, res: Response) => {
       orderBy: { createdAt: 'desc' }
     });
 
+    console.log('Found death requests:', requests.length, requests.map(r => ({ id: r.id, status: r.status })));
+
+    const formattedRequests = requests.map((request) => ({
+      ...request,
+      target: request.user,
+      document1Url: request.deathAnnouncementUrl,
+      document2Url: request.deathReportUrl,
+      document3Url: request.familyRecordUrl,
+    }));
+
     res.json({
       success: true,
-      requests
+      requests: formattedRequests
     });
   } catch (error: any) {
-    console.error(error);
+    console.error('Error fetching death requests:', error);
     res.status(500).json({
       success: false,
       message: 'حدث خطأ أثناء جلب طلبات الوفاة'
@@ -386,9 +456,9 @@ export const rejectDeathRequest = async (req: Request, res: Response) => {
     const adminId = req.user?.userId;   // ← هذا هو مصدر المشكلة
 
     if (!adminId) {
-      return res.status(401).json({ 
-        success: false, 
-        message: 'غير مصرح لك بهذا الإجراء - يجب تسجيل الدخول' 
+      return res.status(401).json({
+        success: false,
+        message: 'غير مصرح لك بهذا الإجراء - يجب تسجيل الدخول'
       });
     }
 
@@ -401,9 +471,9 @@ export const rejectDeathRequest = async (req: Request, res: Response) => {
     }
 
     if (deathRequest.status !== 'PENDING') {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'لا يمكن رفض الطلب، حالته ليست قيد المراجعة' 
+      return res.status(400).json({
+        success: false,
+        message: 'لا يمكن رفض الطلب، حالته ليست قيد المراجعة'
       });
     }
 

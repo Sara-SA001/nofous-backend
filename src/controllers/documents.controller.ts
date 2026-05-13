@@ -1,84 +1,281 @@
-﻿import { Request, Response } from 'express';
+﻿﻿import { Request, Response } from 'express';
 import prisma from '../utils/prisma';
 import { generatePDF } from '../utils/pdfGenerator';
 import QRCode from 'qrcode';
 
-const EMBLEM_PATH = '/images/syria-emblem-2025.png';
-
-const getAbsoluteUrl = (req: Request, relativePath?: string | null) => {
-  if (!relativePath) return null;
-  const protocol = req.protocol;
-  const host = req.get('host');
-  return `${protocol}://${host}${relativePath}`;
-};
+const EMBLEM_URL = 'http://localhost:5000/images/syria-emblem-2025.png';
 
 const normalizeText = (value?: string | null) => value?.toString().replace(/\s+/g, ' ').trim() || '';
 const formatCell = (value?: string | null) => normalizeText(value) || '—';
 const formatName = (name: string, nisba?: string | null) => `${normalizeText(name)}${nisba ? ' ' + normalizeText(nisba) : ''}`.trim();
 const formatDate = (value?: Date | null) => (value ? value.toISOString().split('T')[0] : '—');
+const sortByOldest = (a: any, b: any) => {
+  const firstDate = a?.dateOfBirth ? new Date(a.dateOfBirth).getTime() : Number.MAX_SAFE_INTEGER;
+  const secondDate = b?.dateOfBirth ? new Date(b.dateOfBirth).getTime() : Number.MAX_SAFE_INTEGER;
+  if (firstDate !== secondDate) return firstDate - secondDate;
+  return (a?.id || 0) - (b?.id || 0);
+};
 const toArabicReligion = (value: 'MUSLIM' | 'CHRISTIAN' | 'OTHER') =>
-  value === 'MUSLIM' ? '����' : value === 'CHRISTIAN' ? '�����' : '���';
-const toArabicGender = (value: 'MALE' | 'FEMALE') => (value === 'MALE' ? '���' : '����');
+  value === 'MUSLIM' ? 'مسلم' : value === 'CHRISTIAN' ? 'مسيحي' : 'آخر';
+const toArabicGender = (value: 'MALE' | 'FEMALE') => (value === 'MALE' ? 'ذكر' : 'أنثى');
 const toArabicMaritalStatus = (value: 'SINGLE' | 'MARRIED' | 'DIVORCED' | 'WIDOWED', gender: 'MALE' | 'FEMALE') => {
-  if (value === 'MARRIED') return gender === 'MALE' ? '�����' : '������';
-  if (value === 'DIVORCED') return gender === 'MALE' ? '����' : '�����';
-  if (value === 'WIDOWED') return gender === 'MALE' ? '����' : '�����';
-  return gender === 'MALE' ? '����' : '�����';
+  if (value === 'MARRIED') return gender === 'MALE' ? 'متزوج' : 'متزوجة';
+  if (value === 'DIVORCED') return gender === 'MALE' ? 'مطلق' : 'مطلقة';
+  if (value === 'WIDOWED') return gender === 'MALE' ? 'أرمل' : 'أرملة';
+  return gender === 'MALE' ? 'أعزب' : 'عزباء';
 };
 
-// ====================== 1. بيان عائلي (ترتيب عائلي رسمي) ======================
+
+// ====================== 1. بيان عائلي (مع ملاحظات محسنة) ======================
 export const generateFamilyRecord = async (req: Request, res: Response) => {
   try {
     const userId = req.user?.userId;
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      include: {
-        father: true,
-        husband: true,
-        wives: {
-          include: { children: true }
-        },
-        children: true
-      }
-    });
+    const user = await prisma.user.findUnique({ where: { id: userId } });
 
     if (!user) return res.status(404).json({ success: false, message: 'المستخدم غير موجود' });
 
-    const isMale = user.gender === 'MALE';
-    const familyHead = isMale ? user : user.husband || user.father;
+    const transactionId = `NFS-FAMILY-${Date.now()}-${Math.floor(Math.random() * 100000)}`;
 
-    // جمع الزوجات والأولاد
-    let wives = user.wives || [];
-    if (!isMale && user.husband) {
-      wives = await prisma.user.findMany({
-        where: { husbandId: user.husband.id },
-        include: { children: true }
-      });
+    const familyMembers: any[] = [];
+    const pushUnique = (member: any) => {
+      if (!member || familyMembers.some(m => m.id === member.id)) return;
+      familyMembers.push(member);
+    };
+
+    let familyHead = user;
+
+    if (user.gender === 'MALE' && (user.maritalStatus === 'MARRIED' || user.maritalStatus === 'WIDOWED' || user.maritalStatus === 'DIVORCED')) {
+      familyHead = user;
+    } else if (user.husbandId) {
+      familyHead = await prisma.user.findUnique({ where: { id: user.husbandId } }) || user;
+    } else if (user.fatherId) {
+      familyHead = await prisma.user.findUnique({ where: { id: user.fatherId } }) || user;
     }
-    const emblemUrl = getAbsoluteUrl(req, EMBLEM_PATH);
-    let html = `
+
+    pushUnique(familyHead);
+
+    const wives = await prisma.user.findMany({
+      where: { husbandId: familyHead.id, gender: 'FEMALE' },
+      orderBy: [{ registrationDate: 'asc' }, { id: 'asc' }],
+    });
+    wives.forEach(pushUnique);
+
+    const children = await prisma.user.findMany({
+      where: { fatherId: familyHead.id },
+      orderBy: [{ dateOfBirth: 'asc' }, { id: 'asc' }],
+    });
+    children.sort(sortByOldest).forEach(pushUnique);
+
+    const familyMemberIds = familyMembers.map((member) => member.id);
+
+    const approvedDeaths = await prisma.deathRequest.findMany({
+      where: {
+        status: 'APPROVED',
+        userId: { in: familyMemberIds },
+      },
+      orderBy: { checkedAt: 'desc' },
+    });
+
+    const deathDateByUserId = new Map<number, Date>();
+    approvedDeaths.forEach((death) => {
+      if (deathDateByUserId.has(death.userId)) return;
+      deathDateByUserId.set(death.userId, death.deathDate || death.checkedAt || death.createdAt);
+    });
+
+    const approvedMarriages = await prisma.marriageInfo.findMany({
+      where: {
+        status: 'APPROVED',
+        OR: [{ husbandId: { in: familyMemberIds } }, { wifeId: { in: familyMemberIds } }],
+      },
+      orderBy: { updatedAt: 'desc' },
+    });
+
+    const marriageDateByUserId = new Map<number, Date>();
+    approvedMarriages.forEach((marriage) => {
+      const marriageDate = marriage.marriageDate || marriage.updatedAt || marriage.createdAt;
+      if (!marriageDateByUserId.has(marriage.husbandId)) {
+        marriageDateByUserId.set(marriage.husbandId, marriageDate);
+      }
+      if (!marriageDateByUserId.has(marriage.wifeId)) {
+        marriageDateByUserId.set(marriage.wifeId, marriageDate);
+      }
+    });
+
+    const rowsHtml = familyMembers.map((member) => {
+      let notes = '—';
+
+      const deathDate = deathDateByUserId.get(member.id);
+      const marriageDate = marriageDateByUserId.get(member.id);
+
+      if (deathDate) {
+        notes = `متوفى بتاريخ: ${deathDate.toISOString().split('T')[0]}`;
+      } 
+      else if (marriageDate) {
+        const statusText = member.gender === 'MALE' ? 'متزوج' : 'متزوجة';
+        notes = `${statusText} بتاريخ: ${marriageDate.toISOString().split('T')[0]}`;
+      }
+
+      return `
+        <tr>
+          <td>${member.nationalId || '—'}</td>
+          <td>${member.firstName || '—'} ${member.nisba || ''}</td>
+          <td>${member.nisba || '—'}</td>
+          <td>${member.fatherName || '—'}</td>
+          <td>${member.motherName || '—'} ${member.motherNisba ? `(${member.motherNisba})` : ''}</td>
+          <td>${member.religion === 'MUSLIM' ? 'مسلم' : member.religion === 'CHRISTIAN' ? 'مسيحي' : 'آخر'}</td>
+          <td>${member.placeOfBirth || '—'} - ${member.dateOfBirth ? member.dateOfBirth.toISOString().split('T')[0] : '—'}</td>
+          <td>${member.maritalStatus === 'MARRIED' 
+                  ? (member.gender === 'MALE' ? 'متزوج' : 'متزوجة')
+                  : member.maritalStatus === 'SINGLE' 
+                    ? (member.gender === 'MALE' ? 'أعزب' : 'عزباء')
+                    : member.maritalStatus === 'DIVORCED' 
+                      ? (member.gender === 'MALE' ? 'مطلق' : 'مطلقة')
+                      : (member.gender === 'MALE' ? 'أرمل' : 'أرملة')}</td>
+          <td>${member.gender === 'MALE' ? 'ذكر' : 'أنثى'}</td>
+          <td>${member.nationality || '—'}</td>
+          <td>${member.registrationDate ? member.registrationDate.toISOString().split('T')[0] : '—'}</td>
+          <td>${notes}</td>
+        </tr>`;
+    }).join('');
+
+    const html = `
       <!DOCTYPE html>
       <html dir="rtl" lang="ar">
       <head>
         <meta charset="utf-8">
         <title>بيان عائلي</title>
         <style>
-          body { font-family: 'Amiri', Arial, sans-serif; padding: 30px; line-height: 1.8; }
-          .header { text-align: center; margin-bottom: 30px; border-bottom: 3px solid #0b3d2e; padding-bottom: 20px; }
-          .emblem { height: 100px; }
-          table { width: 100%; border-collapse: collapse; margin: 20px 0; }
-          th, td { border: 1px solid #444; padding: 10px; text-align: right; }
-          th { background: #f0e6d2; font-weight: bold; }
-          .mother-row { background: #f8f1e3; font-weight: bold; }
-          .child-row { background: #fafafa; }
+          @page { size: A4 landscape; margin: 6mm; }
+          * { margin: 0; padding: 0; box-sizing: border-box; }
+          html, body { width: 100%; }
+          body { 
+            font-family: 'Amiri', Arial, sans-serif; 
+            padding: 0; 
+            background: white; 
+            color: #1a1a1a; 
+            line-height: 1.25; 
+            font-size: 10.5px;
+          }
+          .header { 
+            text-align: center; 
+            margin-bottom: 6px; 
+            padding-bottom: 5px; 
+            border-bottom: 2px solid #0b3d2e; 
+          }
+          .emblem { height: 42px; margin-bottom: 3px; }
+          h1 { font-size: 14px; color: #0b3d2e; margin: 2px 0; font-weight: 700; }
+          h2 { font-size: 11px; color: #333; }
+          h3 { font-size: 12px; color: #0b3d2e; font-weight: 700; }
+
+          .record-meta {
+            display: grid;
+            grid-template-columns: 1fr 82px;
+            gap: 6px;
+            align-items: stretch;
+            margin-bottom: 6px;
+          }
+          .family-info { 
+            padding: 5px; 
+            background: #f0e6d2; 
+            border: 1px solid #0b3d2e; 
+            font-size: 10.5px; 
+          }
+          .qr-box {
+            border: 1px solid #0b3d2e;
+            background: #f9f5eb;
+            padding: 4px;
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+          }
+          .qr-box img {
+            width: 56px;
+            height: 56px;
+            border: 1px solid #444;
+          }
+          .qr-id {
+            font-size: 7px;
+            font-weight: bold;
+            color: #0b3d2e;
+            direction: ltr;
+            word-break: break-all;
+          }
+
+          table { 
+            width: 100%; 
+            border-collapse: collapse; 
+            margin: 6px 0; 
+          }
+          th, td { 
+            border: 1px solid #444; 
+            padding: 3px 4px; 
+            text-align: right; 
+            font-size: 9.5px; 
+          }
+          th { 
+            background: #e8dcc8; 
+            font-weight: 700; 
+          }
+
+          .footer { 
+            margin-top: 6px; 
+            text-align: center; 
+            font-size: 9.5px; 
+            color: #444; 
+            border-top: 1px solid #999; 
+            padding-top: 5px; 
+          }
+          .signatures {
+            margin-top: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            gap: 20px;
+            font-size: 10px;
+          }
+          .signature-box {
+            flex: 1;
+            text-align: center;
+            border-top: 1px solid #333;
+            padding-top: 4px;
+          }
+          .stamp {
+            width: 62px;
+            height: 62px;
+            border: 3px double #8B0000;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 4px;
+            color: #8B0000;
+            font-weight: bold;
+            font-size: 9px;
+            transform: rotate(-8deg);
+          }
         </style>
       </head>
       <body>
         <div class="header">
-          <img src="${emblemUrl}" class="emblem" alt="شعار"/>
+          <img src="${EMBLEM_URL}" class="emblem" alt="شعار"/>
           <h1>الجمهورية العربية السورية</h1>
           <h2>وزارة الداخلية - السجل المدني</h2>
           <h3>بيان عائلي</h3>
+        </div>
+
+        <div class="record-meta">
+          <div class="family-info">
+            <strong>المحافظة:</strong> ${familyHead.governorate} &nbsp;&nbsp;&nbsp;
+            <strong>الأمانة:</strong> ${familyHead.amanah || '—'} &nbsp;&nbsp;&nbsp;
+            <strong>محل ورقم القيد:</strong> ${familyHead.registrationPlace} / ${familyHead.registrationNumber || '—'}
+          </div>
+          <div class="qr-box">
+            <img src="https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${transactionId}" alt="QR Code"/>
+            <div class="qr-id">${transactionId}</div>
+          </div>
         </div>
 
         <table>
@@ -86,79 +283,43 @@ export const generateFamilyRecord = async (req: Request, res: Response) => {
             <tr>
               <th>الرقم الوطني</th>
               <th>الاسم</th>
+              <th>النسبة</th>
               <th>اسم الأب</th>
-              <th>اسم الجد</th>
-              <th>اسم الأم</th>
-              <th>تاريخ الولادة</th>
-              <th>الجنس</th>
+              <th>اسم الأم ونسبتها</th>
               <th>الدين</th>
+              <th>محل وتاريخ الولادة</th>
               <th>الوضع العائلي</th>
+              <th>الجنس</th>
+              <th>الجنسية</th>
+              <th>تاريخ التسجيل</th>
+              <th>ملاحظات</th>
             </tr>
           </thead>
-          <tbody>
-    `;
+          <tbody>${rowsHtml}</tbody>
+        </table>
 
-    // 1. الأب (رأس العائلة)
-    if (familyHead) {
-      html += `
-        <tr style="background:#e6f0e6; font-weight:bold;">
-          <td>${familyHead.nationalId}</td>
-          <td>${familyHead.firstName} ${familyHead.nisba || ''}</td>
-          <td>${familyHead.fatherName}</td>
-          <td>${familyHead.grandfatherName || '—'}</td>
-          <td>${familyHead.motherName}</td>
-          <td>${formatDate(familyHead.dateOfBirth)}</td>
-          <td>${familyHead.gender === 'MALE' ? 'ذكر' : 'أنثى'}</td>
-          <td>${toArabicReligion(familyHead.religion)}</td>
-          <td>رأس العائلة</td>
-        </tr>`;
-    }
+        <div class="signatures" style="margin-top: 10px; display: flex; justify-content: space-between; align-items: flex-end;">
+          <div class="signature-box">
+            توقيع صاحب العلاقة<br>
+            <span style="font-size: 9px; color: #555;">....................</span>
+          </div>
+          <div class="signature-box">
+            <div class="stamp">خاتم<br>السجل المدني</div>
+          </div>
+          <div class="signature-box">
+            توقيع الموظف المختص<br>
+            <span style="font-size: 9px; color: #555;">....................</span>
+          </div>
+        </div>
 
-    // 2. الزوجات + أولادهن
-    wives.forEach((wife: any) => {
-      html += `
-        <tr class="mother-row">
-          <td>${wife.nationalId}</td>
-          <td>${wife.firstName} ${wife.nisba || ''}</td>
-          <td>${wife.fatherName}</td>
-          <td>${wife.grandfatherName || '—'}</td>
-          <td>${wife.motherName}</td>
-          <td>${formatDate(wife.dateOfBirth)}</td>
-          <td>أنثى</td>
-          <td>${toArabicReligion(wife.religion)}</td>
-          <td>زوجة</td>
-        </tr>`;
+        <div class="footer">
+          بيان صادر عن النظام الإلكتروني للشؤون المدنية بتاريخ: ${new Date().toLocaleDateString('ar-SY')}<br>
+          وصالح لغاية: ${new Date(Date.now() + 90*24*60*60*1000).toLocaleDateString('ar-SY')}
+        </div>
+      </body>
+      </html>`;
 
-      // أولاد هذه الزوجة
-      if (wife.children && wife.children.length > 0) {
-        wife.children.forEach((child: any) => {
-          html += `
-            <tr class="child-row">
-              <td>${child.nationalId}</td>
-              <td>${child.firstName} ${child.nisba || ''}</td>
-              <td>${child.fatherName}</td>
-              <td>${child.grandfatherName || '—'}</td>
-              <td>${child.motherName}</td>
-              <td>${formatDate(child.dateOfBirth)}</td>
-              <td>${child.gender === 'MALE' ? 'ذكر' : 'أنثى'}</td>
-              <td>${toArabicReligion(child.religion)}</td>
-              <td>ابن/ابنة</td>
-            </tr>`;
-        });
-      }
-    });
-
-    html += `</tbody></table>`;
-
-    // الفوتر
-    html += `
-      <div style="margin-top: 60px; text-align: center; color: #444;">
-        <p>بيان صادر عن النظام الإلكتروني للشؤون المدنية</p>
-        <p>تاريخ الإصدار: ${new Date().toLocaleDateString('ar-SY')} | صالح لغاية: ${new Date(Date.now() + 90*24*60*60*1000).toLocaleDateString('ar-SY')}</p>
-      </div>
-    `;
-
-    const pdf = await generatePDF(html, `بيان_عائلي_${user.nationalId}`, true);
+    const pdf = await generatePDF(html, `بيان_عائلي_${user.nationalId}`, true); // landscape
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="family-record-${user.nationalId}.pdf"`);
@@ -166,9 +327,10 @@ export const generateFamilyRecord = async (req: Request, res: Response) => {
 
   } catch (error: any) {
     console.error(error);
-    res.status(500).json({ success: false, message: 'فشل في توليد البيان العائلي' });
+    res.status(500).json({ success: false, message: 'فشل في توليد بيان العائلي' });
   }
 };
+
 // ====================== 2. بيان فردي (تصميم محسن - بدون فراغات زائدة) ======================
 export const generateIndividualRecord = async (req: Request, res: Response) => {
   try {
@@ -178,14 +340,6 @@ export const generateIndividualRecord = async (req: Request, res: Response) => {
     if (!user) return res.status(404).json({ success: false, message: 'المستخدم غير موجود' });
 
     const transactionId = `NFS-${Date.now()}-${Math.floor(Math.random() * 100000)}`;
-    const emblemUrl = getAbsoluteUrl(req, EMBLEM_PATH);
-    const photoUrl = user.personalPhoto ? getAbsoluteUrl(req, user.personalPhoto) : null;
-
-    const qrCodeDataUrl = await QRCode.toDataURL(transactionId, {
-      errorCorrectionLevel: 'H',
-      width: 120,
-      margin: 1,
-    });
 
     const html = `
       <!DOCTYPE html>
@@ -194,37 +348,38 @@ export const generateIndividualRecord = async (req: Request, res: Response) => {
         <meta charset="utf-8">
         <title>بيان قيد فردي مدني</title>
         <style>
-          @page { size: A4 portrait; margin: 12mm; }
+          @page { size: A4 portrait; margin: 6mm; }
           * { margin: 0; padding: 0; box-sizing: border-box; }
+          html, body { width: 100%; }
           body { 
             font-family: 'Amiri', Arial, sans-serif; 
             background: white; 
             color: #1a1a1a; 
-            line-height: 1.45; 
-            font-size: 12.5px;
+            line-height: 1.3; 
+            font-size: 11px;
           }
           .header { 
             text-align: center; 
-            margin-bottom: 14px; 
-            padding-bottom: 10px; 
-            border-bottom: 3px solid #0b3d2e; 
+            margin-bottom: 8px; 
+            padding-bottom: 6px; 
+            border-bottom: 2px solid #0b3d2e; 
           }
-          .emblem { height: 72px; margin-bottom: 8px; }
-          h1 { font-size: 17px; color: #0b3d2e; margin: 4px 0; font-weight: 700; }
-          h2 { font-size: 13px; color: #333; margin: 2px 0; }
-          h3 { font-size: 15px; color: #0b3d2e; margin: 10px 0 8px 0; font-weight: 700; }
+          .emblem { height: 48px; margin-bottom: 4px; }
+          h1 { font-size: 15px; color: #0b3d2e; margin: 2px 0; font-weight: 700; }
+          h2 { font-size: 11px; color: #333; }
+          h3 { font-size: 13px; color: #0b3d2e; font-weight: 700; }
 
           .content { 
             display: grid; 
-            grid-template-columns: 1fr 150px; 
-            gap: 14px; 
-            margin-top: 14px; 
+            grid-template-columns: 1fr 135px; 
+            gap: 10px; 
+            margin-top: 8px; 
           }
           .main-content { grid-column: 1; }
           .sidebar { 
             grid-column: 2; 
-            border: 2px solid #444; 
-            padding: 10px; 
+            border: 1px solid #444; 
+            padding: 7px; 
             background: #f9f5eb; 
             text-align: center; 
             height: fit-content; 
@@ -232,9 +387,9 @@ export const generateIndividualRecord = async (req: Request, res: Response) => {
           .photo-box { 
             width: 100%; 
             aspect-ratio: 3/4; 
-            border: 2px solid #555; 
+            border: 1px solid #555; 
             background: #f0f0f0; 
-            margin-bottom: 10px; 
+            margin-bottom: 6px; 
             overflow: hidden; 
           }
           .photo-box img { width: 100%; height: 100%; object-fit: cover; }
@@ -242,61 +397,61 @@ export const generateIndividualRecord = async (req: Request, res: Response) => {
           table { 
             width: 100%; 
             border-collapse: collapse; 
-            margin-bottom: 14px; 
+            margin-bottom: 8px; 
           }
           th, td { 
             border: 1px solid #555; 
-            padding: 7px 8px; 
+            padding: 5px 7px; 
             text-align: right; 
           }
           th { 
             background: #e8dcc8; 
             font-weight: 700; 
-            width: 38%; 
+            width: 37%; 
           }
 
           .signatures {
-            margin-top: 32px;
+            margin-top: 12px;
             display: flex;
             justify-content: space-between;
             align-items: flex-end;
-            gap: 16px;
+            gap: 20px;
           }
           .signature-box {
             flex: 1;
             text-align: center;
             border-top: 1px solid #333;
-            padding-top: 6px;
-            font-size: 12.5px;
+            padding-top: 5px;
+            font-size: 10.5px;
           }
           .stamp {
-            width: 100px;
-            height: 100px;
+            width: 68px;
+            height: 68px;
             border: 3px double #8B0000;
             border-radius: 50%;
             display: flex;
             align-items: center;
             justify-content: center;
-            margin: 0 auto 8px;
+            margin: 0 auto 4px;
             color: #8B0000;
             font-weight: bold;
-            font-size: 12px;
+            font-size: 9px;
             transform: rotate(-8deg);
           }
 
           .footer { 
-            margin-top: 26px; 
+            margin-top: 8px; 
             text-align: center; 
-            font-size: 12px; 
+            font-size: 10px; 
             color: #444; 
             border-top: 1px solid #999; 
-            padding-top: 8px; 
+            padding-top: 5px; 
           }
         </style>
       </head>
       <body>
         <div class="header">
-          <img src="${emblemUrl}" class="emblem" alt="شعار"/>
+          <img src="${EMBLEM_URL}" class="emblem" alt="شعار"/>
           <h1>الجمهورية العربية السورية</h1>
           <h2>وزارة الداخلية - السجل المدني</h2>
           <h3>بيان قيد فردي مدني</h3>
@@ -335,30 +490,30 @@ export const generateIndividualRecord = async (req: Request, res: Response) => {
           <!-- الجانب الأيمن (مضغوط) -->
           <div class="sidebar">
             <div class="photo-box">
-              ${photoUrl ? `<img src="${photoUrl}" alt="صورة شخصية" />` : '<span>لا توجد صورة</span>'}
+              ${user.personalPhoto ? `<img src="http://localhost:5000${user.personalPhoto}" alt="صورة شخصية" />` : '<span>لا توجد صورة</span>'}
             </div>
             
-            <div style="margin: 15px 0 8px;">
-              <img src="${qrCodeDataUrl}" alt="QR Code" style="border: 2px solid #444;"/>
+            <div style="margin: 8px 0 5px;">
+              <img src="https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${transactionId}" alt="QR Code" style="width: 82px; height: 82px; border: 1px solid #444;"/>
             </div>
-            <div style="font-size: 13px; font-weight: bold; color: #0b3d2e;">
+            <div style="font-size: 9px; font-weight: bold; color: #0b3d2e; word-break: break-all;">
               ${transactionId}
             </div>
           </div>
         </div>
 
         <!-- منطقة التوقيعات -->
-        <div class="signatures" style="margin-top: 50px; display: flex; justify-content: space-between; align-items: flex-end;">
+        <div class="signatures" style="margin-top: 12px; display: flex; justify-content: space-between; align-items: flex-end;">
           <div class="signature-box">
             توقيع صاحب العلاقة<br>
-            <span style="font-size: 12px; color: #555;">${user.firstName} ${user.nisba || ''}</span>
+            <span style="font-size: 9px; color: #555;">${user.firstName} ${user.nisba || ''}</span>
           </div>
-          <div class="signature-box"  style="margin-top: 20px;">
+          <div class="signature-box">
             <div class="stamp">خاتم<br>السجل المدني</div>
           </div>
           <div class="signature-box" >
             توقيع الموظف المختص<br>
-            <span style="font-size: 12px; color: #555;">....................</span>
+            <span style="font-size: 9px; color: #555;">....................</span>
           </div>
         </div>
 
@@ -385,13 +540,10 @@ export const generateMarriageCertificate = async (req: Request, res: Response) =
   try {
     const currentUserId = req.user?.userId;
     if (!currentUserId) return res.status(401).json({ success: false, message: 'غير مصرح' });
-    const transactionId = `NFS-MARRIAGE-${Date.now()}-${Math.floor(Math.random() * 100000)}`;
 
     const currentUser = await prisma.user.findUnique({ where: { id: currentUserId } });
     if (!currentUser) return res.status(404).json({ success: false, message: 'المستخدم غير موجود' });
-    if (currentUser.maritalStatus !== 'MARRIED') {
-      return res.status(400).json({ success: false, message: 'المستخدم غير متزوج ولا يمكن استخراج بيان زواج' });
-    }
+
     const marriage = await prisma.marriageInfo.findFirst({
       where: {
         status: 'APPROVED',
@@ -462,7 +614,6 @@ export const generateMarriageCertificate = async (req: Request, res: Response) =
       margin: 1,
     });
 
-    const emblemUrl = getAbsoluteUrl(req, EMBLEM_PATH);
     const html = `
       <!DOCTYPE html>
       <html dir="rtl" lang="ar">
@@ -470,82 +621,51 @@ export const generateMarriageCertificate = async (req: Request, res: Response) =
         <meta charset="utf-8">
         <title>بيان زواج</title>
         <style>
-          @page { size: A4 portrait; margin: 12mm; }
+          @page { size: A4 landscape; margin: 6mm; }
           * { margin: 0; padding: 0; box-sizing: border-box; }
-          body { font-family: 'Amiri', Arial, sans-serif; padding: 22px; background: white; color: #1a1a1a; min-height: 100vh; font-size: 12.5px; line-height: 1.45; }
-          .header { 
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-start;
-            gap: 15px;
-            margin-bottom: 12px; 
-            padding-bottom: 8px; 
-            border-bottom: 2px solid #0b3d2e; 
-          }
-          .header-content {
-            flex: 1;
-            text-align: center;
-          }
-          .header-qr { 
-            border: 1px solid #0b3d2e;
-            background: #f9f5eb;
-            padding: 8px;
-            text-align: center;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            gap: 5px;
-            flex-shrink: 0;
-            width: 110px;
-          }
-          .header-qr img { width: 88px; height: 88px; border: 1px solid #444; }
-          .emblem { height: 68px; margin-bottom: 6px; }
-          h1 { font-size: 16px; color: #0b3d2e; margin: 4px 0; font-weight: 700; }
-          h2 { font-size: 13px; color: #333; margin: 2px 0; font-weight: 600; }
-          h3 { font-size: 15px; color: #0b3d2e; margin: 4px 0; font-weight: 700; }
-          .section-title { background: #0b3d2e; color: white; padding: 7px 10px; margin: 10px 0 8px 0; text-align: center; font-size: 14px; font-weight: 700; }
-          table { width: 100%; border-collapse: collapse; border-spacing: 0; margin-bottom: 10px; border: 1px solid #444; }
-          th, td { border: 1px solid #444; padding: 7px 8px; text-align: right; vertical-align: middle; line-height: 1.35; font-size: 12.5px; }
+          html, body { width: 100%; }
+          body { font-family: 'Amiri', Arial, sans-serif; padding: 0; background: white; color: #1a1a1a; display: flex; flex-direction: column; min-height: 100vh; font-size: 10.5px; line-height: 1.25; }
+          .content-wrapper { flex: 1; }
+          .header { text-align: center; margin-bottom: 6px; padding-bottom: 5px; border-bottom: 2px solid #0b3d2e; position: relative; }
+          .header-qr { position: absolute; top: 0; right: 0; width: 62px; }
+          .header-qr img { width: 56px; height: 56px; border: 1px solid #999; }
+          .header-qr-label { font-size: 7px; color: #666; margin-top: 1px; }
+          .emblem { height: 42px; margin-bottom: 3px; }
+          h1 { font-size: 14px; color: #0b3d2e; margin: 2px 0; font-weight: 700; }
+          h2 { font-size: 11px; color: #333; margin: 1px 0; font-weight: 600; }
+          h3 { font-size: 12px; color: #0b3d2e; margin: 2px 0; font-weight: 700; }
+          .section-title { background: #0b3d2e; color: white; padding: 4px 7px; margin: 6px 0 5px 0; text-align: center; font-size: 11px; font-weight: 700; }
+          table { width: 100%; border-collapse: collapse; border-spacing: 0; margin-bottom: 6px; border: 1px solid #444; }
+          th, td { border: 1px solid #444; padding: 4px 6px; text-align: right; vertical-align: middle; line-height: 1.25; font-size: 10px; }
           th { background: #e8dcc8; font-weight: 700; }
-          .footer { margin-top: 18px; padding-top: 14px; text-align: center; border-top: 1px solid #999; font-size: 12px; color: #555; line-height: 1.4; }
-          .signatures { margin-top: 16px; display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; font-size: 12px; font-weight: 600; }
-          .signature-box { flex: 1; border-top: 1px solid #333; padding-top: 6px; text-align: center; }
+          .footer { margin-top: auto; padding-top: 6px; text-align: center; border-top: 1px solid #999; font-size: 9px; color: #555; line-height: 1.25; }
+          .signatures { margin-top: 8px; display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; font-size: 10px; font-weight: 600; }
+          .signature-box { flex: 1; border-top: 1px solid #333; padding-top: 4px; text-align: center; }
           .stamp {
-            width: 95px;
-            height: 95px;
+            width: 62px;
+            height: 62px;
             border: 3px double #8B0000;
             border-radius: 50%;
             display: flex;
             align-items: center;
             justify-content: center;
-            margin: 0 auto 8px;
+            margin: 0 auto 4px;
             color: #8B0000;
             font-weight: bold;
-            font-size: 12px;
+            font-size: 9px;
             transform: rotate(-8deg);
-          }
-            .qr-id {
-            font-size: 8px;
-            font-weight: bold;
-            color: #0b3d2e;
-            direction: ltr;
-            word-break: break-all;
-            line-height: 1.2;
           }
         </style>
       </head>
       <body>
         <div class="header">
-          <div class="header-content">
-            <img src="${emblemUrl}" class="emblem" alt="شعار"/>
-            <h1>الجمهورية العربية السورية</h1>
-            <h2>وزارة الداخلية - السجل المدني</h2>
-            <h3>بيان زواج</h3>
-          </div>
+          <img src="${EMBLEM_URL}" class="emblem" alt="شعار"/>
+          <h1>الجمهورية العربية السورية</h1>
+          <h2>وزارة الداخلية - السجل المدني</h2>
+          <h3>بيان زواج</h3>
           <div class="header-qr">
             <img src="${qrCodeDataUrl}" alt="QR Code" />
-            <div class="qr-id">${transactionId}</div>
+            <div class="header-qr-label">تحقق</div>
           </div>
         </div>
 
@@ -565,7 +685,7 @@ export const generateMarriageCertificate = async (req: Request, res: Response) =
           <tr><td>الدين</td><td>${husband.religion === 'MUSLIM' ? 'مسلم' : husband.religion === 'CHRISTIAN' ? 'مسيحي' : 'آخر'}</td><td>${wife.religion === 'MUSLIM' ? 'مسلم' : wife.religion === 'CHRISTIAN' ? 'مسيحي' : 'آخر'}</td></tr>
         </table>
 
-        <div class="section-title" style="margin-top: 20px;">بيانات عقد الزواج</div>
+        <div class="section-title" style="margin-top: 6px;">بيانات عقد الزواج</div>
         <table>
           <tr><th>تاريخ الزواج</th><td>${marriage.marriageDate ? marriage.marriageDate.toISOString().split('T')[0] : '—'}</td></tr>
           <tr><th>محل الزواج</th><td>${formatCell(marriage.marriagePlace)}</td></tr>
@@ -597,16 +717,27 @@ export const generateMarriageCertificate = async (req: Request, res: Response) =
 export const generateDeathReport = async (req: Request, res: Response) => {
   try {
     const requesterId = req.user?.userId;
-    const targetUserId = Number(req.query.userId || requesterId);
+    const targetNationalId = typeof req.query.nationalId === 'string'
+      ? req.query.nationalId.trim()
+      : typeof req.query.userId === 'string' && /^\d{10}$/.test(req.query.userId.trim())
+        ? req.query.userId.trim()
+        : null;
+    const targetUserId = targetNationalId
+      ? null
+      : req.query.userId
+        ? Number(req.query.userId)
+        : requesterId;
 
-    if (!requesterId || isNaN(targetUserId)) {
+    if (!requesterId || (!targetNationalId && (!targetUserId || isNaN(targetUserId)))) {
       return res.status(400).json({ success: false, message: 'بيانات الطلب غير صحيحة' });
     }
 
     const requester = await prisma.user.findUnique({ where: { id: requesterId } });
     if (!requester) return res.status(404).json({ success: false, message: 'مقدم الطلب غير موجود' });
 
-    const deceased = await prisma.user.findUnique({ where: { id: targetUserId } });
+    const deceased = targetNationalId
+      ? await prisma.user.findUnique({ where: { nationalId: targetNationalId } })
+      : await prisma.user.findUnique({ where: { id: targetUserId! } });
     if (!deceased) return res.status(404).json({ success: false, message: 'الشخص المتوفى غير موجود' });
 
     // التحقق من وجود طلب وفاة معتمد
@@ -627,14 +758,6 @@ export const generateDeathReport = async (req: Request, res: Response) => {
     }
 
     const transactionId = `NFS-DEATH-${Date.now()}-${Math.floor(Math.random() * 100000)}`;
-    const emblemUrl = getAbsoluteUrl(req, EMBLEM_PATH);
-    const photoUrl = deceased.personalPhoto ? getAbsoluteUrl(req, deceased.personalPhoto) : null;
-
-    const qrCodeDataUrl = await QRCode.toDataURL(transactionId, {
-      errorCorrectionLevel: 'H',
-      width: 120,
-      margin: 1,
-    });
 
     const html = `
       <!DOCTYPE html>
@@ -643,44 +766,45 @@ export const generateDeathReport = async (req: Request, res: Response) => {
         <meta charset="utf-8">
         <title>تقرير وفاة</title>
         <style>
-          @page { size: A4 portrait; margin: 12mm; }
+          @page { size: A4 portrait; margin: 6mm; }
           * { margin: 0; padding: 0; box-sizing: border-box; }
+          html, body { width: 100%; }
           body { 
             font-family: 'Amiri', Arial, sans-serif; 
             background: white; 
             color: #1a1a1a; 
-            line-height: 1.45; 
-            font-size: 12.5px;
+            line-height: 1.3; 
+            font-size: 11px;
           }
-          .header { text-align: center; margin-bottom: 14px; padding-bottom: 10px; border-bottom: 3px solid #8B0000; }
-          .emblem { height: 72px; margin-bottom: 8px; }
-          h1 { font-size: 17px; color: #8B0000; margin: 5px 0; font-weight: 700; }
-          h3 { font-size: 15px; color: #8B0000; margin: 12px 0 8px 0; font-weight: 700; }
+          .header { text-align: center; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 2px solid #8B0000; }
+          .emblem { height: 48px; margin-bottom: 4px; }
+          h1 { font-size: 15px; color: #8B0000; margin: 2px 0; font-weight: 700; }
+          h3 { font-size: 13px; color: #8B0000; margin: 8px 0 5px 0; font-weight: 700; }
 
-          .content { display: grid; grid-template-columns: 1fr 150px; gap: 14px; margin-top: 14px; }
+          .content { display: grid; grid-template-columns: 1fr 135px; gap: 10px; margin-top: 8px; }
           .main-content { grid-column: 1; }
-          .sidebar { grid-column: 2; border: 2px solid #8B0000; padding: 10px; background: #fdf2f2; text-align: center; height: fit-content; }
-          .photo-box { width: 100%; aspect-ratio: 3/4; border: 2px solid #8B0000; background: #f0f0f0; margin-bottom: 10px; overflow: hidden; }
+          .sidebar { grid-column: 2; border: 1px solid #8B0000; padding: 7px; background: #fdf2f2; text-align: center; height: fit-content; }
+          .photo-box { width: 100%; aspect-ratio: 3/4; border: 1px solid #8B0000; background: #f0f0f0; margin-bottom: 6px; overflow: hidden; }
           .photo-box img { width: 100%; height: 100%; object-fit: cover; }
 
-          table { width: 100%; border-collapse: collapse; margin-bottom: 14px; }
-          th, td { border: 1px solid #555; padding: 7px 8px; text-align: right; }
-          th { background: #f0d9d9; font-weight: 700; width: 36%; }
+          table { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
+          th, td { border: 1px solid #555; padding: 5px 7px; text-align: right; }
+          th { background: #f0d9d9; font-weight: 700; width: 37%; }
 
-          .signatures { margin-top: 32px; display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; }
-          .signature-box { flex: 1; text-align: center; border-top: 1px solid #333; padding-top: 8px; font-size: 12.5px; }
+          .signatures { margin-top: 12px; display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; }
+          .signature-box { flex: 1; text-align: center; border-top: 1px solid #333; padding-top: 5px; font-size: 10.5px; }
           .stamp { 
-            width: 100px; height: 100px; border: 3px double #8B0000; border-radius: 50%; 
-            display: flex; align-items: center; justify-content: center; margin: 0 auto 8px;
-            color: #8B0000; font-weight: bold; font-size: 12px; transform: rotate(-8deg);
+            width: 68px; height: 68px; border: 3px double #8B0000; border-radius: 50%; 
+            display: flex; align-items: center; justify-content: center; margin: 0 auto 4px;
+            color: #8B0000; font-weight: bold; font-size: 9px; transform: rotate(-8deg);
           }
 
-          .footer { margin-top: 26px; text-align: center; font-size: 12px; color: #444; border-top: 1px solid #999; padding-top: 8px; }
+          .footer { margin-top: 8px; text-align: center; font-size: 10px; color: #444; border-top: 1px solid #999; padding-top: 5px; }
         </style>
       </head>
       <body>
         <div class="header">
-          <img src="${emblemUrl}" class="emblem" alt="شعار"/>
+          <img src="${EMBLEM_URL}" class="emblem" alt="شعار"/>
           <h1>الجمهورية العربية السورية</h1>
           <h2>وزارة الداخلية - السجل المدني</h2>
           <h3>تقرير وفاة</h3>
@@ -703,7 +827,7 @@ export const generateDeathReport = async (req: Request, res: Response) => {
               <tr><th>الدين</th><td>${deceased.religion === 'MUSLIM' ? 'مسلم' : deceased.religion === 'CHRISTIAN' ? 'مسيحي' : 'آخر'}</td></tr>
             </table>
 
-            <h3 style="margin: 25px 0 10px; color: #8B0000;">بيانات الوفاة</h3>
+            <h3 style="margin: 8px 0 5px; color: #8B0000;">بيانات الوفاة</h3>
             <table>
               <tr><th>تاريخ الوفاة</th><td>${deathRequest.deathDate ? deathRequest.deathDate.toISOString().split('T')[0] : formatDate(deathRequest.checkedAt)}</td></tr>
               <tr><th>مكان الوفاة</th><td>${deathRequest.deathPlace || '—'}</td></tr>
@@ -712,18 +836,18 @@ export const generateDeathReport = async (req: Request, res: Response) => {
 
           <div class="sidebar">
             <div class="photo-box">
-              ${photoUrl ? `<img src="${photoUrl}" alt="صورة" />` : '<span>لا توجد صورة</span>'}
+              ${deceased.personalPhoto ? `<img src="http://localhost:5000${deceased.personalPhoto}" alt="صورة" />` : '<span>لا توجد صورة</span>'}
             </div>
-            <div style="margin: 15px 0 8px;">
-              <img src="${qrCodeDataUrl}" alt="QR"/>
+            <div style="margin: 8px 0 5px;">
+              <img src="https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${transactionId}" alt="QR" style="width: 82px; height: 82px;"/>
             </div>
-            <div style="font-size: 13px; font-weight: bold; color: #8B0000;">${transactionId}</div>
+            <div style="font-size: 9px; font-weight: bold; color: #8B0000; word-break: break-all;">${transactionId}</div>
           </div>
         </div>
 
-        <div class="signatures" style="margin-top: 45px;">
+        <div class="signatures" style="margin-top: 10px;">
           <div class="signature-box">توقيع صاحب العلاقة<br><span style="color:#555;">${requester.firstName} ${requester.nisba || ''}</span></div>
-          <div class="signature-box"><div class="stamp" style="margin-top: 45px;">خاتم<br>السجل المدني</div></div>
+          <div class="signature-box"><div class="stamp">خاتم<br>السجل المدني</div></div>
           <div class="signature-box">توقيع الموظف المختص<br><span style="color:#555;">....................</span></div>
         </div>
 
@@ -745,5 +869,3 @@ export const generateDeathReport = async (req: Request, res: Response) => {
     res.status(500).json({ success: false, message: 'فشل في توليد تقرير الوفاة' });
   }
 };
-
-

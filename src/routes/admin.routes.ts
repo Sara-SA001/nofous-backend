@@ -1,8 +1,9 @@
 import { Router } from 'express';
-import { 
+import {
   registerAdmin,
   loginAdmin,
   getAllLinkRequests,
+  getAllUsers,
   approveLinkRequest,
   rejectLinkRequest,
   getDeathRequests,
@@ -18,8 +19,14 @@ const router = Router();
 router.post('/register', registerAdmin);
 router.post('/login', loginAdmin);
 
+// ====================== المستخدمين ======================
+router.get('/users', protectAdmin, getAllUsers);
+
 // ====================== طلبات الارتباط ======================
-router.get('/link-requests', protectAdmin, getAllLinkRequests);
+router.get('/link-requests', (req, res, next) => {
+  console.log('Route /link-requests hit, headers:', req.headers);
+  next();
+}, protectAdmin, getAllLinkRequests);
 router.put('/link-requests/:id/approve', protectAdmin, approveLinkRequest);
 router.put('/link-requests/:id/reject', protectAdmin, rejectLinkRequest);
 
