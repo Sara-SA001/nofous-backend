@@ -100,3 +100,37 @@ export const requestDeath = async (req: Request, res: Response) => {
     });
   }
 };
+
+export const getMyDeathRequests = async (req: Request, res: Response) => {
+  try {
+    const requesterId = req.user?.userId;
+
+    if (!requesterId) {
+      return res.status(401).json({ success: false, message: 'غير مصرح لك بالدخول' });
+    }
+
+    const requests = await prisma.deathRequest.findMany({
+      where: { requesterId },
+      include: {
+        user: { select: { firstName: true, nationalId: true } }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    const formattedRequests = requests.map((request) => ({
+      id: request.id,
+      targetNationalId: request.user.nationalId,
+      targetName: request.user.firstName,
+      status: request.status,
+      deathDate: request.deathDate,
+      deathPlace: request.deathPlace,
+      notes: request.notes,
+      createdAt: request.createdAt,
+    }));
+
+    res.json({ success: true, requests: formattedRequests });
+  } catch (error: any) {
+    console.error('Get My Death Requests Error:', error);
+    res.status(500).json({ success: false, message: 'حدث خطأ أثناء جلب الطلبات', error: error.message });
+  }
+};

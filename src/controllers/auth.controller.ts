@@ -47,9 +47,9 @@ export const registerUser = async (req: Request, res: Response) => {
     });
 
     if (existingUser) {
-      return res.status(409).json({ 
-        success: false, 
-        message: 'الرقم الوطني مسجل مسبقاً' 
+      return res.status(409).json({
+        success: false,
+        message: 'الرقم الوطني مسجل مسبقاً'
       });
     }
 
@@ -58,45 +58,52 @@ export const registerUser = async (req: Request, res: Response) => {
 
     const files = req.files as { [fieldname: string]: Express.Multer.File[] } || {};
 
-    const personalPhoto = files['personalPhoto']?.[0] 
-      ? `/uploads/${files['personalPhoto'][0].filename}` 
+    const personalPhoto = files['personalPhoto']?.[0]
+      ? `/uploads/${files['personalPhoto'][0].filename}`
       : null;
 
-    const idFrontPhoto = files['idFrontPhoto']?.[0] 
-      ? `/uploads/${files['idFrontPhoto'][0].filename}` 
+    const idFrontPhoto = files['idFrontPhoto']?.[0]
+      ? `/uploads/${files['idFrontPhoto'][0].filename}`
       : null;
 
-    const idBackPhoto = files['idBackPhoto']?.[0] 
-      ? `/uploads/${files['idBackPhoto'][0].filename}` 
+    const idBackPhoto = files['idBackPhoto']?.[0]
+      ? `/uploads/${files['idBackPhoto'][0].filename}`
       : null;
+
+    const userData: any = {
+      nationalId,
+      firstName,
+      fatherName,
+      grandfatherName,
+      motherName,
+      dateOfBirth: new Date(dateOfBirth),
+      placeOfBirth,
+      nationality,
+      governorate,
+      gender,
+      religion,
+      maritalStatus,
+      password: hashedPassword,
+      nisba,
+      amanah,
+      registrationPlace: registrationPlace || "",
+      registrationNumber: registrationNumber || "",
+      cardNumber: cardNumber || "",
+      issueDate: issueDate ? new Date(issueDate) : undefined,
+      fatherId,
+      husbandId,
+      personalPhoto,
+      idFrontPhoto,
+      idBackPhoto,
+    };
+
+    // Only include registrationDate if provided (otherwise Prisma will use @default(now()))
+    if (validatedData.registrationDate) {
+      userData.registrationDate = new Date(validatedData.registrationDate);
+    }
 
     const newUser = await prisma.user.create({
-      data: {
-        nationalId,
-        firstName,
-        fatherName,
-        grandfatherName,
-        motherName,
-        dateOfBirth: new Date(dateOfBirth),
-        placeOfBirth,
-        nationality,
-        governorate,
-        gender,
-        religion,
-        maritalStatus,
-        password: hashedPassword,
-        nisba,
-        amanah,
-        registrationPlace: registrationPlace || "",
-        registrationNumber: registrationNumber || "",
-        cardNumber: cardNumber || "",
-        issueDate: issueDate ? new Date(issueDate) : undefined,
-        fatherId,
-        husbandId,
-        personalPhoto,
-        idFrontPhoto,
-        idBackPhoto,
-      },
+      data: userData,
       select: {
         id: true,
         nationalId: true,
@@ -115,7 +122,8 @@ export const registerUser = async (req: Request, res: Response) => {
     const token = generateToken({
       userId: newUser.id,
       nationalId: newUser.nationalId,
-      role: 'user'
+      role: 'USER',
+      status: 'PENDING'
     });
 
     res.status(201).json({
@@ -184,10 +192,20 @@ export const loginUser = async (req: Request, res: Response) => {
       });
     }
 
+    if (user.status !== 'APPROVED') {
+      return res.status(403).json({
+        success: false,
+        message: user.status === 'PENDING'
+          ? 'لا يمكن تسجيل الدخول قبل موافقة الإدارة على الحساب'
+          : 'هذا الحساب غير مفعل'
+      });
+    }
+
     const token = generateToken({
       userId: user.id,
       nationalId: user.nationalId,
-      role: 'user'
+      role: 'USER',
+      status: user.status
     });
 
     res.json({

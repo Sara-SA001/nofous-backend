@@ -13,6 +13,11 @@ const generateToken = (payload) => {
 };
 exports.generateToken = generateToken;
 const verifyToken = (token) => {
-    return jsonwebtoken_1.default.verify(token, JWT_SECRET);
+    try {
+        return jsonwebtoken_1.default.verify(token, JWT_SECRET);
+    }
+    catch (error) {
+        throw new Error('Invalid or expired token');
+    }
 };
 exports.verifyToken = verifyToken;

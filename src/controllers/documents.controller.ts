@@ -106,6 +106,15 @@ export const generateFamilyRecord = async (req: Request, res: Response) => {
 
       const deathDate = deathDateByUserId.get(member.id);
       const marriageDate = marriageDateByUserId.get(member.id);
+      const familyStatusText = member.isAlive
+        ? (member.maritalStatus === 'MARRIED'
+            ? (member.gender === 'MALE' ? 'متزوج' : 'متزوجة')
+            : member.maritalStatus === 'SINGLE'
+              ? (member.gender === 'MALE' ? 'أعزب' : 'عزباء')
+              : member.maritalStatus === 'DIVORCED'
+                ? (member.gender === 'MALE' ? 'مطلق' : 'مطلقة')
+                : (member.gender === 'MALE' ? 'أرمل' : 'أرملة'))
+        : 'متوفى';
 
       if (deathDate) {
         notes = `متوفى بتاريخ: ${deathDate.toISOString().split('T')[0]}`;
@@ -124,13 +133,7 @@ export const generateFamilyRecord = async (req: Request, res: Response) => {
           <td>${member.motherName || '—'} ${member.motherNisba ? `(${member.motherNisba})` : ''}</td>
           <td>${member.religion === 'MUSLIM' ? 'مسلم' : member.religion === 'CHRISTIAN' ? 'مسيحي' : 'آخر'}</td>
           <td>${member.placeOfBirth || '—'} - ${member.dateOfBirth ? member.dateOfBirth.toISOString().split('T')[0] : '—'}</td>
-          <td>${member.maritalStatus === 'MARRIED' 
-                  ? (member.gender === 'MALE' ? 'متزوج' : 'متزوجة')
-                  : member.maritalStatus === 'SINGLE' 
-                    ? (member.gender === 'MALE' ? 'أعزب' : 'عزباء')
-                    : member.maritalStatus === 'DIVORCED' 
-                      ? (member.gender === 'MALE' ? 'مطلق' : 'مطلقة')
-                      : (member.gender === 'MALE' ? 'أرمل' : 'أرملة')}</td>
+          <td>${familyStatusText}</td>
           <td>${member.gender === 'MALE' ? 'ذكر' : 'أنثى'}</td>
           <td>${member.nationality || '—'}</td>
           <td>${member.registrationDate ? member.registrationDate.toISOString().split('T')[0] : '—'}</td>
@@ -473,13 +476,15 @@ export const generateIndividualRecord = async (req: Request, res: Response) => {
               <tr><th>الجنس</th><td>${user.gender === 'MALE' ? 'ذكر' : 'أنثى'}</td></tr>
               <tr><th>الدين</th><td>${user.religion === 'MUSLIM' ? 'مسلم' : user.religion === 'CHRISTIAN' ? 'مسيحي' : 'آخر'}</td></tr>
               <tr><th>الوضع العائلي</th><td>
-                ${user.maritalStatus === 'MARRIED' 
-                  ? (user.gender === 'MALE' ? 'متزوج' : 'متزوجة')
-                  : user.maritalStatus === 'SINGLE' 
-                    ? (user.gender === 'MALE' ? 'أعزب' : 'عزباء')
-                    : user.maritalStatus === 'DIVORCED' 
-                      ? (user.gender === 'MALE' ? 'مطلق' : 'مطلقة')
-                      : (user.gender === 'MALE' ? 'أرمل' : 'أرملة')}
+                ${!user.isAlive
+                  ? 'متوفى'
+                  : user.maritalStatus === 'MARRIED'
+                    ? (user.gender === 'MALE' ? 'متزوج' : 'متزوجة')
+                    : user.maritalStatus === 'SINGLE'
+                      ? (user.gender === 'MALE' ? 'أعزب' : 'عزباء')
+                      : user.maritalStatus === 'DIVORCED'
+                        ? (user.gender === 'MALE' ? 'مطلق' : 'مطلقة')
+                        : (user.gender === 'MALE' ? 'أرمل' : 'أرملة')}
               </td></tr>
               <tr><th>رقم البطاقة</th><td>${user.cardNumber || '—'}</td></tr>
               <tr><th>تاريخ التسجيل</th><td>${user.registrationDate ? user.registrationDate.toISOString().split('T')[0] : '—'}</td></tr>
@@ -638,7 +643,7 @@ export const generateMarriageCertificate = async (req: Request, res: Response) =
           table { width: 100%; border-collapse: collapse; border-spacing: 0; margin-bottom: 6px; border: 1px solid #444; }
           th, td { border: 1px solid #444; padding: 4px 6px; text-align: right; vertical-align: middle; line-height: 1.25; font-size: 10px; }
           th { background: #e8dcc8; font-weight: 700; }
-          .footer { margin-top: auto; padding-top: 6px; text-align: center; border-top: 1px solid #999; font-size: 9px; color: #555; line-height: 1.25; }
+          .footer { margin-top: 6px; padding-top: 6px; text-align: center; border-top: 1px solid #999; font-size: 9px; color: #555; line-height: 1.25; }
           .signatures { margin-top: 8px; display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; font-size: 10px; font-weight: 600; }
           .signature-box { flex: 1; border-top: 1px solid #333; padding-top: 4px; text-align: center; }
           .stamp {
@@ -691,15 +696,27 @@ export const generateMarriageCertificate = async (req: Request, res: Response) =
           <tr><th>محل الزواج</th><td>${formatCell(marriage.marriagePlace)}</td></tr>
         </table>
 
+        <div class="signatures">
+          <div class="signature-box">
+            توقيع الزوج<br>
+            <span style="font-size: 9px; color: #555;">....................</span>
+          </div>
+          <div class="signature-box">
+            توقيع الزوجة<br>
+            <span style="font-size: 9px; color: #555;">....................</span>
+          </div>
+          <div class="signature-box">
+            <div class="stamp">خاتم<br>السجل المدني</div>
+          </div>
+          <div class="signature-box">
+            توقيع الموظف المختص<br>
+            <span style="font-size: 9px; color: #555;">....................</span>
+          </div>
+        </div>
+
         <div class="footer">
           صادر عن النظام الإلكتروني للشؤون المدنية بتاريخ ${new Date().toLocaleDateString('ar-SY')}<br>
           صالح حتى ${new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toLocaleDateString('ar-SY')}
-        </div>
-
-        <div class="signatures">
-          <div>توقيع الزوج</div>
-          <div>توقيع الزوجة</div>
-          <div>الموظف المختص</div>
         </div>
       </body>
       </html>`;

@@ -43,6 +43,24 @@ enum LinkType {
   HUSBAND_LINK
 }
 
+enum Role {
+  ADMIN
+  SUB_ADMIN
+  USER
+}
+
+enum AdminRole {
+  ADMIN
+  SUB_ADMIN
+}
+
+enum UserStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  BANNED
+}
+
 // Models
 model User {
   id Int @id @default(autoincrement())
@@ -81,6 +99,8 @@ model User {
 
   fatherId  Int? @map("father_id")
   husbandId Int? @map("husband_id")
+  role          Role       @default(USER)
+  status        UserStatus @default(PENDING)
 
   father   User?  @relation("FatherChildren", fields: [fatherId], references: [id], onDelete: SetNull)
   children User[] @relation("FatherChildren")
@@ -159,6 +179,7 @@ model Admin {
   id       Int     @id @default(autoincrement())
   username String  @unique
   email    String  @unique
+  role     AdminRole @default(SUB_ADMIN)
   password String
   fullName String?
   isActive Boolean @default(true)

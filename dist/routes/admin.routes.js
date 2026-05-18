@@ -4,20 +4,26 @@ const express_1 = require("express");
 const admin_controller_1 = require("../controllers/admin.controller");
 const auth_middleware_1 = require("../middleware/auth.middleware");
 const router = (0, express_1.Router)();
-// ====================== مصادقة الأدمن ======================
+// مصادقة
 router.post('/register', admin_controller_1.registerAdmin);
 router.post('/login', admin_controller_1.loginAdmin);
-// ====================== المستخدمين ======================
-router.get('/users', auth_middleware_1.protectAdmin, admin_controller_1.getAllUsers);
-// ====================== طلبات الارتباط ======================
-router.get('/link-requests', (req, res, next) => {
-    console.log('Route /link-requests hit, headers:', req.headers);
-    next();
-}, auth_middleware_1.protectAdmin, admin_controller_1.getAllLinkRequests);
-router.put('/link-requests/:id/approve', auth_middleware_1.protectAdmin, admin_controller_1.approveLinkRequest);
-router.put('/link-requests/:id/reject', auth_middleware_1.protectAdmin, admin_controller_1.rejectLinkRequest);
-// ====================== طلبات الوفاة ======================
-router.get('/death-requests', auth_middleware_1.protectAdmin, admin_controller_1.getDeathRequests);
-router.put('/death-requests/:id/approve', auth_middleware_1.protectAdmin, admin_controller_1.approveDeathRequest);
-router.put('/death-requests/:id/reject', auth_middleware_1.protectAdmin, admin_controller_1.rejectDeathRequest);
+router.get('/me', auth_middleware_1.protect, admin_controller_1.getCurrentAdmin);
+// طلبات التسجيل
+router.get('/registration-requests', auth_middleware_1.protect, (0, auth_middleware_1.protectAdmin)('SUB_ADMIN'), admin_controller_1.getRegistrationRequests);
+router.put('/registration-requests/:id/approve', auth_middleware_1.protect, (0, auth_middleware_1.protectAdmin)('SUB_ADMIN'), admin_controller_1.approveRegistration);
+router.put('/registration-requests/:id/reject', auth_middleware_1.protect, (0, auth_middleware_1.protectAdmin)('SUB_ADMIN'), admin_controller_1.rejectRegistration);
+// طلبات الارتباط
+router.get('/link-requests', auth_middleware_1.protect, (0, auth_middleware_1.protectAdmin)('SUB_ADMIN'), admin_controller_1.getAllLinkRequests);
+router.put('/link-requests/:id/approve', auth_middleware_1.protect, (0, auth_middleware_1.protectAdmin)('SUB_ADMIN'), admin_controller_1.approveLinkRequest);
+router.put('/link-requests/:id/reject', auth_middleware_1.protect, (0, auth_middleware_1.protectAdmin)('SUB_ADMIN'), admin_controller_1.rejectLinkRequest);
+// طلبات الوفاة
+router.get('/death-requests', auth_middleware_1.protect, (0, auth_middleware_1.protectAdmin)('SUB_ADMIN'), admin_controller_1.getDeathRequests);
+router.put('/death-requests/:id/approve', auth_middleware_1.protect, (0, auth_middleware_1.protectAdmin)('SUB_ADMIN'), admin_controller_1.approveDeathRequest);
+router.put('/death-requests/:id/reject', auth_middleware_1.protect, (0, auth_middleware_1.protectAdmin)('SUB_ADMIN'), admin_controller_1.rejectDeathRequest);
+router.get('/dashboard-stats', auth_middleware_1.protect, (0, auth_middleware_1.protectAdmin)('SUB_ADMIN'), admin_controller_1.getDashboardStats);
+// إدارة المستخدمين (للأدمن الرئيسي فقط)
+router.get('/users', auth_middleware_1.protect, (0, auth_middleware_1.protectAdmin)('SUB_ADMIN'), admin_controller_1.getAllUsers);
+router.put('/users/:id', auth_middleware_1.protect, (0, auth_middleware_1.protectAdmin)('SUB_ADMIN'), admin_controller_1.updateUser);
+router.delete('/users/:id', auth_middleware_1.protect, (0, auth_middleware_1.protectAdmin)('SUB_ADMIN'), admin_controller_1.deleteUser);
+router.post('/create-subadmin', auth_middleware_1.protect, (0, auth_middleware_1.protectAdmin)('ADMIN'), admin_controller_1.createSubAdmin);
 exports.default = router;

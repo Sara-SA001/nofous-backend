@@ -28,7 +28,8 @@ const getCurrentUser = async (req, res) => {
                 registrationDate: true,
                 issueDate: true,
                 fatherId: true,
-                husbandId: true
+                husbandId: true,
+                role: true,
             }
         });
         if (!user) {

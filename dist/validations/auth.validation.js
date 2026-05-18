@@ -32,18 +32,14 @@ exports.registerUserSchema = zod_1.z.object({
     registrationPlace: zod_1.z.string().optional(),
     registrationNumber: zod_1.z.string().optional(),
     cardNumber: zod_1.z.string().optional(), // مهم: optional بدون default("")
-    issueDate: zod_1.z.union([
-        zod_1.z.string()
-            .regex(/^\d{4}-\d{2}-\d{2}$/, "صيغة تاريخ الاصدار يجب أن تكون YYYY-MM-DD")
-            .refine((date) => !isNaN(Date.parse(date)), "تاريخ الاصدار غير صالح"),
-        zod_1.z.undefined()
-    ]),
-    registrationDate: zod_1.z.union([
-        zod_1.z.string()
-            .regex(/^\d{4}-\d{2}-\d{2}$/, "صيغة تاريخ التسجيل يجب أن تكون YYYY-MM-DD")
-            .refine((date) => !isNaN(Date.parse(date)), "تاريخ التسجيل غير صالح"),
-        zod_1.z.undefined()
-    ]),
+    issueDate: zod_1.z.string()
+        .regex(/^\d{4}-\d{2}-\d{2}$/, "صيغة تاريخ الاصدار يجب أن تكون YYYY-MM-DD")
+        .refine((date) => !isNaN(Date.parse(date)), "تاريخ الاصدار غير صالح")
+        .optional(),
+    registrationDate: zod_1.z.string()
+        .regex(/^\d{4}-\d{2}-\d{2}$/, "صيغة تاريخ التسجيل يجب أن تكون YYYY-MM-DD")
+        .refine((date) => !isNaN(Date.parse(date)), "تاريخ التسجيل غير صالح")
+        .optional(),
     fatherId: zod_1.z.preprocess((value) => {
         if (value === undefined || value === null || value === "")
             return undefined;
@@ -67,6 +63,7 @@ exports.registerAdminSchema = zod_1.z.object({
     email: zod_1.z.string().email("بريد إلكتروني غير صالح"),
     password: zod_1.z.string().min(8, "كلمة المرور يجب أن تكون 8 أحرف على الأقل"),
     fullName: zod_1.z.string().optional(),
+    role: zod_1.z.enum(["ADMIN", "SUB_ADMIN"]).optional(),
 });
 exports.adminLoginSchema = zod_1.z.object({
     email: zod_1.z.string().email("بريد إلكتروني غير صالح"),

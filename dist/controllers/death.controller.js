@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.requestDeath = exports.uploadDeathDocuments = void 0;
+exports.getMyDeathRequests = exports.requestDeath = exports.uploadDeathDocuments = void 0;
 const prisma_1 = __importDefault(require("../utils/prisma"));
 const upload_1 = __importDefault(require("../utils/upload"));
 exports.uploadDeathDocuments = upload_1.default.fields([
@@ -93,3 +93,34 @@ const requestDeath = async (req, res) => {
     }
 };
 exports.requestDeath = requestDeath;
+const getMyDeathRequests = async (req, res) => {
+    try {
+        const requesterId = req.user?.userId;
+        if (!requesterId) {
+            return res.status(401).json({ success: false, message: 'غير مصرح لك بالدخول' });
+        }
+        const requests = await prisma_1.default.deathRequest.findMany({
+            where: { requesterId },
+            include: {
+                user: { select: { firstName: true, nationalId: true } }
+            },
+            orderBy: { createdAt: 'desc' }
+        });
+        const formattedRequests = requests.map((request) => ({
+            id: request.id,
+            targetNationalId: request.user.nationalId,
+            targetName: request.user.firstName,
+            status: request.status,
+            deathDate: request.deathDate,
+            deathPlace: request.deathPlace,
+            notes: request.notes,
+            createdAt: request.createdAt,
+        }));
+        res.json({ success: true, requests: formattedRequests });
+    }
+    catch (error) {
+        console.error('Get My Death Requests Error:', error);
+        res.status(500).json({ success: false, message: 'حدث خطأ أثناء جلب الطلبات', error: error.message });
+    }
+};
+exports.getMyDeathRequests = getMyDeathRequests;

@@ -7,8 +7,11 @@ const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-key-2026-change-
 
 export interface JwtPayload {
   userId: number;
-  nationalId?: string;
-  role: 'user' | 'admin';
+  nationalId: string;
+  role: 'ADMIN' | 'SUB_ADMIN' | 'USER';
+  status?: 'PENDING' | 'APPROVED' | 'REJECTED' | 'BANNED';
+  iat?: number;
+  exp?: number;
 }
 
 export const generateToken = (payload: JwtPayload): string => {
@@ -16,5 +19,9 @@ export const generateToken = (payload: JwtPayload): string => {
 };
 
 export const verifyToken = (token: string): JwtPayload => {
-  return jwt.verify(token, JWT_SECRET) as JwtPayload;
+  try {
+    return jwt.verify(token, JWT_SECRET) as JwtPayload;
+  } catch (error) {
+    throw new Error('Invalid or expired token');
+  }
 };

@@ -41,33 +41,38 @@ const registerUser = async (req, res) => {
         const idBackPhoto = files['idBackPhoto']?.[0]
             ? `/uploads/${files['idBackPhoto'][0].filename}`
             : null;
+        const userData = {
+            nationalId,
+            firstName,
+            fatherName,
+            grandfatherName,
+            motherName,
+            dateOfBirth: new Date(dateOfBirth),
+            placeOfBirth,
+            nationality,
+            governorate,
+            gender,
+            religion,
+            maritalStatus,
+            password: hashedPassword,
+            nisba,
+            amanah,
+            registrationPlace: registrationPlace || "",
+            registrationNumber: registrationNumber || "",
+            cardNumber: cardNumber || "",
+            issueDate: issueDate ? new Date(issueDate) : undefined,
+            fatherId,
+            husbandId,
+            personalPhoto,
+            idFrontPhoto,
+            idBackPhoto,
+        };
+        // Only include registrationDate if provided (otherwise Prisma will use @default(now()))
+        if (validatedData.registrationDate) {
+            userData.registrationDate = new Date(validatedData.registrationDate);
+        }
         const newUser = await prisma_1.default.user.create({
-            data: {
-                nationalId,
-                firstName,
-                fatherName,
-                grandfatherName,
-                motherName,
-                dateOfBirth: new Date(dateOfBirth),
-                placeOfBirth,
-                nationality,
-                governorate,
-                gender,
-                religion,
-                maritalStatus,
-                password: hashedPassword,
-                nisba,
-                amanah,
-                registrationPlace: registrationPlace || "",
-                registrationNumber: registrationNumber || "",
-                cardNumber: cardNumber || "",
-                issueDate: issueDate ? new Date(issueDate) : undefined,
-                fatherId,
-                husbandId,
-                personalPhoto,
-                idFrontPhoto,
-                idBackPhoto,
-            },
+            data: userData,
             select: {
                 id: true,
                 nationalId: true,
@@ -85,7 +90,8 @@ const registerUser = async (req, res) => {
         const token = (0, jwt_utils_1.generateToken)({
             userId: newUser.id,
             nationalId: newUser.nationalId,
-            role: 'user'
+            role: 'USER',
+            status: 'PENDING'
         });
         res.status(201).json({
             success: true,
@@ -147,10 +153,19 @@ const loginUser = async (req, res) => {
                 message: 'الرقم الوطني أو كلمة المرور غير صحيحة'
             });
         }
+        if (user.status !== 'APPROVED') {
+            return res.status(403).json({
+                success: false,
+                message: user.status === 'PENDING'
+                    ? 'لا يمكن تسجيل الدخول قبل موافقة الإدارة على الحساب'
+                    : 'هذا الحساب غير مفعل'
+            });
+        }
         const token = (0, jwt_utils_1.generateToken)({
             userId: user.id,
             nationalId: user.nationalId,
-            role: 'user'
+            role: 'USER',
+            status: user.status
         });
         res.json({
             success: true,
@@ -163,10 +178,7 @@ const loginUser = async (req, res) => {
                 gender: user.gender,
                 maritalStatus: user.maritalStatus,
                 fatherId: user.fatherId,
-                husbandId: user.husbandId,
-                personalPhoto: user.personalPhoto,
-                idFrontPhoto: user.idFrontPhoto,
-                idBackPhoto: user.idBackPhoto,
+                husbandId: user.husbandId
             },
             token
         });

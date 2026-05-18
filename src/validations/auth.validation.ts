@@ -38,18 +38,14 @@ export const registerUserSchema = z.object({
   registrationPlace: z.string().optional(),
   registrationNumber: z.string().optional(),
   cardNumber: z.string().optional(),           // مهم: optional بدون default("")
-  issueDate: z.union([
-    z.string()
-      .regex(/^\d{4}-\d{2}-\d{2}$/, "صيغة تاريخ الاصدار يجب أن تكون YYYY-MM-DD")
-      .refine((date: string) => !isNaN(Date.parse(date)), "تاريخ الاصدار غير صالح"),
-    z.undefined()
-  ]),
-  registrationDate: z.union([
-    z.string()
-      .regex(/^\d{4}-\d{2}-\d{2}$/, "صيغة تاريخ التسجيل يجب أن تكون YYYY-MM-DD")
-      .refine((date: string) => !isNaN(Date.parse(date)), "تاريخ التسجيل غير صالح"),
-    z.undefined()
-  ]),
+  issueDate: z.string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "صيغة تاريخ الاصدار يجب أن تكون YYYY-MM-DD")
+    .refine((date: string) => !isNaN(Date.parse(date)), "تاريخ الاصدار غير صالح")
+    .optional(),
+  registrationDate: z.string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "صيغة تاريخ التسجيل يجب أن تكون YYYY-MM-DD")
+    .refine((date: string) => !isNaN(Date.parse(date)), "تاريخ التسجيل غير صالح")
+    .optional(),
 
   fatherId: z.preprocess((value: unknown) => {
     if (value === undefined || value === null || value === "") return undefined;
@@ -76,6 +72,7 @@ export const registerAdminSchema = z.object({
   email: z.string().email("بريد إلكتروني غير صالح"),
   password: z.string().min(8, "كلمة المرور يجب أن تكون 8 أحرف على الأقل"),
   fullName: z.string().optional(),
+  role: z.enum(["ADMIN", "SUB_ADMIN"]).optional(),
 });
 
 export const adminLoginSchema = z.object({
