@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import prisma from '../utils/prisma';
 import { generateToken } from '../utils/jwt.utils';
 import { adminLoginSchema, registerAdminSchema } from '../validations/auth.validation';
+import { ADMIN_PERMISSIONS, normalizeAdminPermissions } from '../constants/adminPermissions';
 
 const getZodIssues = (error: any) => error.issues || error.errors || [];
 
@@ -30,13 +31,17 @@ export const registerAdmin = async (req: Request, res: Response) => {
     const salt = await bcrypt.genSalt(12);
     const hashedPassword = await bcrypt.hash(validatedData.password, salt);
 
+    const role = validatedData.role || 'SUB_ADMIN';
+    const permissions = role === 'ADMIN' ? [...ADMIN_PERMISSIONS] : [];
+
     const admin = await prisma.admin.create({
       data: {
         username: validatedData.username,
         email: validatedData.email,
         password: hashedPassword,
         fullName: validatedData.fullName || '',
-        role: validatedData.role || 'SUB_ADMIN',
+        role,
+        permissions,
       }
     });
 
@@ -48,6 +53,7 @@ export const registerAdmin = async (req: Request, res: Response) => {
         username: admin.username,
         email: admin.email,
         role: admin.role,
+        permissions: admin.permissions,
       }
     });
   } catch (error: any) {
@@ -78,6 +84,7 @@ export const loginAdmin = async (req: Request, res: Response) => {
       userId: admin.id,
       nationalId: admin.email,
       role: admin.role,
+      permissions: admin.permissions,
       status: 'APPROVED'
     });
 
@@ -88,7 +95,8 @@ export const loginAdmin = async (req: Request, res: Response) => {
         id: admin.id,
         username: admin.username,
         email: admin.email,
-        role: admin.role
+        role: admin.role,
+        permissions: admin.permissions
       },
       token
     });
@@ -581,7 +589,16 @@ export const getDashboardStats = async (req: Request, res: Response) => {
 
 export const createSubAdmin = async (req: Request, res: Response) => {
   try {
-    const { username, email, password, fullName } = req.body;
+    const { username, email, password, fullName, permissions } = req.body;
+    const normalizedPermissions = normalizeAdminPermissions(permissions);
+
+    if (!username || !email || !password) {
+      return res.status(400).json({ success: false, message: 'اسم المستخدم والبريد وكلمة المرور مطلوبة' });
+    }
+
+    if (normalizedPermissions.length === 0) {
+      return res.status(400).json({ success: false, message: 'يجب تحديد صلاحية واحدة على الأقل للـ SubAdmin' });
+    }
 
     const existing = await prisma.admin.findFirst({
       where: { OR: [{ email }, { username }] }
@@ -600,6 +617,7 @@ export const createSubAdmin = async (req: Request, res: Response) => {
         email,
         password: hashedPassword,
         fullName: fullName || '',
+        permissions: normalizedPermissions,
       }
     });
 
@@ -610,6 +628,7 @@ export const createSubAdmin = async (req: Request, res: Response) => {
         id: subAdmin.id,
         username: subAdmin.username,
         email: subAdmin.email,
+        permissions: subAdmin.permissions,
       }
     });
   } catch (error: any) {
@@ -632,7 +651,8 @@ export const getCurrentAdmin = async (req: Request, res: Response) => {
         username: true,
         email: true,
         fullName: true,
-        role: true
+        role: true,
+        permissions: true,
       }
     });
 

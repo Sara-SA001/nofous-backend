@@ -1,5 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { verifyToken, JwtPayload } from '../utils/jwt.utils';
+import prisma from '../utils/prisma';
+import type { AdminPermission } from '../constants/adminPermissions';
 
 declare global {
   namespace Express {
@@ -50,6 +52,46 @@ export const protectAdmin = (minRole: 'ADMIN' | 'SUB_ADMIN' = 'SUB_ADMIN') => {
       return res.status(403).json({ success: false, message: 'صلاحيات غير كافية' });
     } catch (error) {
       return res.status(403).json({ success: false, message: 'خطأ في التحقق من الصلاحيات' });
+    }
+  };
+};
+
+export const protectAdminPermission = (permission: AdminPermission) => {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ success: false, message: 'يجب تسجيل الدخول' });
+      }
+
+      if (req.user.role === 'ADMIN') return next();
+
+      if (req.user.role !== 'SUB_ADMIN') {
+        return res.status(403).json({ success: false, message: 'صلاحيات غير كافية' });
+      }
+
+      const admin = await prisma.admin.findUnique({
+        where: { id: req.user.userId },
+        select: {
+          role: true,
+          permissions: true,
+          isActive: true,
+        }
+      });
+
+      if (!admin || !admin.isActive) {
+        return res.status(403).json({ success: false, message: 'الحساب غير مفعل' });
+      }
+
+      if (admin.role === 'ADMIN') return next();
+
+      if (!admin.permissions.includes(permission)) {
+        return res.status(403).json({ success: false, message: 'لا تملك صلاحية الوصول لهذه الصفحة' });
+      }
+
+      req.user.permissions = admin.permissions;
+      return next();
+    } catch (error) {
+      return res.status(403).json({ success: false, message: 'خطأ في التحقق من صلاحيات الحساب' });
     }
   };
 };

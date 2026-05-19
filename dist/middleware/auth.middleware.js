@@ -1,7 +1,11 @@
 "use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.protectAdmin = exports.protect = void 0;
+exports.protectAdminPermission = exports.protectAdmin = exports.protect = void 0;
 const jwt_utils_1 = require("../utils/jwt.utils");
+const prisma_1 = __importDefault(require("../utils/prisma"));
 // حماية المستخدم العادي
 const protect = async (req, res, next) => {
     try {
@@ -44,3 +48,39 @@ const protectAdmin = (minRole = 'SUB_ADMIN') => {
     };
 };
 exports.protectAdmin = protectAdmin;
+const protectAdminPermission = (permission) => {
+    return async (req, res, next) => {
+        try {
+            if (!req.user) {
+                return res.status(401).json({ success: false, message: 'يجب تسجيل الدخول' });
+            }
+            if (req.user.role === 'ADMIN')
+                return next();
+            if (req.user.role !== 'SUB_ADMIN') {
+                return res.status(403).json({ success: false, message: 'صلاحيات غير كافية' });
+            }
+            const admin = await prisma_1.default.admin.findUnique({
+                where: { id: req.user.userId },
+                select: {
+                    role: true,
+                    permissions: true,
+                    isActive: true,
+                }
+            });
+            if (!admin || !admin.isActive) {
+                return res.status(403).json({ success: false, message: 'الحساب غير مفعل' });
+            }
+            if (admin.role === 'ADMIN')
+                return next();
+            if (!admin.permissions.includes(permission)) {
+                return res.status(403).json({ success: false, message: 'لا تملك صلاحية الوصول لهذه الصفحة' });
+            }
+            req.user.permissions = admin.permissions;
+            return next();
+        }
+        catch (error) {
+            return res.status(403).json({ success: false, message: 'خطأ في التحقق من صلاحيات الحساب' });
+        }
+    };
+};
+exports.protectAdminPermission = protectAdminPermission;

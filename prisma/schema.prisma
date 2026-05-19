@@ -54,6 +54,13 @@ enum AdminRole {
   SUB_ADMIN
 }
 
+enum AdminPermission {
+  MANAGE_REGISTRATION_REQUESTS
+  MANAGE_LINK_REQUESTS
+  MANAGE_DEATH_REQUESTS
+  MANAGE_USERS
+}
+
 enum UserStatus {
   PENDING
   APPROVED
@@ -180,6 +187,7 @@ model Admin {
   username String  @unique
   email    String  @unique
   role     AdminRole @default(SUB_ADMIN)
+  permissions AdminPermission[] @default([])
   password String
   fullName String?
   isActive Boolean @default(true)

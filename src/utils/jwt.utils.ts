@@ -1,5 +1,6 @@
 import jwt from 'jsonwebtoken';
 import dotenv from 'dotenv';
+import type { AdminPermission } from '../constants/adminPermissions';
 
 dotenv.config();
 
@@ -9,6 +10,7 @@ export interface JwtPayload {
   userId: number;
   nationalId: string;
   role: 'ADMIN' | 'SUB_ADMIN' | 'USER';
+  permissions?: AdminPermission[];
   status?: 'PENDING' | 'APPROVED' | 'REJECTED' | 'BANNED';
   iat?: number;
   exp?: number;
