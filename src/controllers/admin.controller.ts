@@ -118,6 +118,9 @@ export const getRegistrationRequests = async (req: Request, res: Response) => {
         gender: true,
         dateOfBirth: true,
         createdAt: true,
+        personalPhoto: true,
+        idFrontPhoto: true,
+        idBackPhoto: true,
       },
       orderBy: { createdAt: 'desc' }
     });
