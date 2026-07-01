@@ -75,13 +75,6 @@ export const registerUser = async (req: Request, res: Response) => {
       ? `/uploads/${files['signature'][0].filename}`
       : null;
 
-    if (!signature) {
-      return res.status(400).json({
-        success: false,
-        message: 'التوقيع مطلوب',
-      });
-    }
-
     const userData: any = {
       nationalId,
       firstName,

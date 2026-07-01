@@ -33,6 +33,6 @@ const fileFilter = (req, file, cb) => {
 const upload = (0, multer_1.default)({
     storage: storage,
     fileFilter: fileFilter,
-    limits: { fileSize: 5 * 1024 * 1024 } // الحد الأقصى 5 ميغابايت
+    limits: { fileSize: 15 * 1024 * 1024 } // الحد الأقصى 15 ميغابايت لكل صورة
 });
 exports.default = upload;

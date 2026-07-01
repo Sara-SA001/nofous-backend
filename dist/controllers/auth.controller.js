@@ -13,7 +13,8 @@ const getZodIssues = (error) => error.issues || error.errors || [];
 exports.uploadUserPhotos = upload_1.default.fields([
     { name: 'personalPhoto', maxCount: 1 },
     { name: 'idFrontPhoto', maxCount: 1 },
-    { name: 'idBackPhoto', maxCount: 1 }
+    { name: 'idBackPhoto', maxCount: 1 },
+    { name: 'signature', maxCount: 1 }
 ]);
 const registerUser = async (req, res) => {
     try {
@@ -41,6 +42,9 @@ const registerUser = async (req, res) => {
         const idBackPhoto = files['idBackPhoto']?.[0]
             ? `/uploads/${files['idBackPhoto'][0].filename}`
             : null;
+        const signature = files['signature']?.[0]
+            ? `/uploads/${files['signature'][0].filename}`
+            : null;
         const userData = {
             nationalId,
             firstName,
@@ -59,13 +63,14 @@ const registerUser = async (req, res) => {
             amanah,
             registrationPlace: registrationPlace || "",
             registrationNumber: registrationNumber || "",
-            cardNumber: cardNumber || "",
+            cardNumber: cardNumber || null,
             issueDate: issueDate ? new Date(issueDate) : undefined,
             fatherId,
             husbandId,
             personalPhoto,
             idFrontPhoto,
             idBackPhoto,
+            signature,
         };
         // Only include registrationDate if provided (otherwise Prisma will use @default(now()))
         if (validatedData.registrationDate) {
@@ -85,6 +90,7 @@ const registerUser = async (req, res) => {
                 personalPhoto: true,
                 idFrontPhoto: true,
                 idBackPhoto: true,
+                signature: true,
             }
         });
         const token = (0, jwt_utils_1.generateToken)({
@@ -108,6 +114,7 @@ const registerUser = async (req, res) => {
                 personalPhoto: newUser.personalPhoto,
                 idFrontPhoto: newUser.idFrontPhoto,
                 idBackPhoto: newUser.idBackPhoto,
+                signature: newUser.signature,
             },
             token
         });

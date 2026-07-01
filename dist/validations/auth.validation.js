@@ -53,6 +53,7 @@ exports.registerUserSchema = zod_1.z.object({
     personalPhoto: zod_1.z.any().optional(),
     idFrontPhoto: zod_1.z.any().optional(),
     idBackPhoto: zod_1.z.any().optional(),
+    signature: zod_1.z.any().optional(),
 });
 exports.loginUserSchema = zod_1.z.object({
     nationalId: zod_1.z.string().length(10, "الرقم الوطني يجب أن يكون 10 أرقام"),

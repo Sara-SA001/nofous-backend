@@ -128,7 +128,7 @@ export const generateFamilyRecord = async (req: Request, res: Response) => {
       return `
         <tr>
           <td>${member.nationalId || '—'}</td>
-          <td>${member.firstName || '—'} ${member.nisba || ''}</td>
+          <td>${member.firstName || '—'} </td>
           <td>${member.nisba || '—'}</td>
           <td>${member.fatherName || '—'}</td>
           <td>${member.motherName || '—'}</td>
@@ -295,14 +295,6 @@ export const generateFamilyRecord = async (req: Request, res: Response) => {
           </thead>
           <tbody>${rowsHtml}</tbody>
         </table>
-
-        <div class="signatures" style="margin-top: 10px; display: flex; justify-content: space-between; align-items: flex-end;">
-          <div class="signature-box">
-                        توقيع صاحب العلاقة<br>
-                        ${(user as any).signature ? '<img src="http://localhost:5000' + (user as any).signature + '" alt="توقيع" style="width:140px; height:auto;"/>' : '<span style="font-size: 9px; color: #555;">....................</span>'}
-          </div>
-          
-        </div>
 
         <div class="footer">
           بيان صادر عن النظام الإلكتروني للشؤون المدنية بتاريخ: ${new Date().toLocaleDateString('ar-SY')}<br>
@@ -481,15 +473,6 @@ export const generateIndividualRecord = async (req: Request, res: Response) => {
                 <img src="https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(transactionId)}" alt="QR Code" style="width: 82px; height: 82px; border: 1px solid #444;"/>
             </div>
           </div>
-        </div>
-
-        <!-- منطقة التوقيعات -->
-        <div class="signatures" style="margin-top: 12px; display: flex; justify-content: space-between; align-items: flex-end;">
-          <div class="signature-box">
-            توقيع صاحب العلاقة<br>
-            ${(user as any).signature ? '<img src="http://localhost:5000' + (user as any).signature + '" alt="توقيع" style="width:140px; height:auto;"/>' : '<span style="font-size: 9px; color: #555;">' + user.firstName + ' ' + (user.nisba || '') + '</span>'}
-          </div>
-          
         </div>
 
         <div class="footer">
@@ -676,18 +659,6 @@ export const generateMarriageCertificate = async (req: Request, res: Response) =
           <tr><th>محل الزواج</th><td>${formatCell(marriage.marriagePlace)}</td></tr>
         </table>
 
-        <div class="signatures">
-          <div class="signature-box">
-            توقيع الزوج<br>
-            ${husband.signature ? '<img src="http://localhost:5000' + husband.signature + '" alt="توقيع" style="width:140px; height:auto;"/>' : '<span style="font-size: 9px; color: #555;">....................</span>'}
-          </div>
-          <div class="signature-box">
-            توقيع الزوجة<br>
-            ${wife.signature ? '<img src="http://localhost:5000' + wife.signature + '" alt="توقيع" style="width:140px; height:auto;"/>' : '<span style="font-size: 9px; color: #555;">....................</span>'}
-          </div>
-          
-        </div>
-
         <div class="footer">
           صادر عن النظام الإلكتروني للشؤون المدنية بتاريخ ${new Date().toLocaleDateString('ar-SY')}<br>
           صالح حتى ${new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toLocaleDateString('ar-SY')}
@@ -850,11 +821,6 @@ export const generateDeathReport = async (req: Request, res: Response) => {
             </div>
             
           </div>
-        </div>
-
-        <div class="signatures" style="margin-top: 10px;">
-          <div class="signature-box">توقيع صاحب العلاقة<br>${(deceased as any).signature ? '<img src="http://localhost:5000' + (deceased as any).signature + '" alt="توقيع" style="width:140px; height:auto;"/>' : '<span style="color:#555;">' + deceased.firstName + ' ' + (deceased.nisba || '') + '</span>'}</div>
-          
         </div>
 
         <div class="footer">

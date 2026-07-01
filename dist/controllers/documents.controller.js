@@ -30,6 +30,7 @@ const toArabicMaritalStatus = (value, gender) => {
         return gender === 'MALE' ? 'أرمل' : 'أرملة';
     return gender === 'MALE' ? 'أعزب' : 'عزباء';
 };
+// dynamic watermark and stamp meta removed; transaction IDs remain embedded inside QR codes only
 // ====================== 1. بيان عائلي (مع ملاحظات محسنة) ======================
 const generateFamilyRecord = async (req, res) => {
     try {
@@ -122,7 +123,7 @@ const generateFamilyRecord = async (req, res) => {
           <td>${member.firstName || '—'} ${member.nisba || ''}</td>
           <td>${member.nisba || '—'}</td>
           <td>${member.fatherName || '—'}</td>
-          <td>${member.motherName || '—'} ${member.motherNisba ? `(${member.motherNisba})` : ''}</td>
+          <td>${member.motherName || '—'}</td>
           <td>${member.religion === 'MUSLIM' ? 'مسلم' : member.religion === 'CHRISTIAN' ? 'مسيحي' : 'آخر'}</td>
           <td>${member.placeOfBirth || '—'} - ${member.dateOfBirth ? member.dateOfBirth.toISOString().split('T')[0] : '—'}</td>
           <td>${familyStatusText}</td>
@@ -222,6 +223,7 @@ const generateFamilyRecord = async (req, res) => {
             border-top: 1px solid #999; 
             padding-top: 5px; 
           }
+          /* watermark removed */
           .signatures {
             margin-top: 10px;
             display: flex;
@@ -236,20 +238,12 @@ const generateFamilyRecord = async (req, res) => {
             border-top: 1px solid #333;
             padding-top: 4px;
           }
-          .stamp {
-            width: 62px;
-            height: 62px;
-            border: 3px double #8B0000;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin: 0 auto 4px;
-            color: #8B0000;
-            font-weight: bold;
-            font-size: 9px;
-            transform: rotate(-8deg);
-          }
+          const form = new FormData();
+          form.append('nationalId', values.nationalId);
+          // ...
+          form.append('personalPhoto', personalFile);
+          form.append('signature', signatureFile); // اسم الحقل يجب أن يكون signature
+          fetch('/api/auth/register', { method: 'POST', body: form });          /* stamp removed - only owner signature will be shown */
         </style>
       </head>
       <body>
@@ -260,6 +254,8 @@ const generateFamilyRecord = async (req, res) => {
           <h3>بيان عائلي</h3>
         </div>
 
+        
+
         <div class="record-meta">
           <div class="family-info">
             <strong>المحافظة:</strong> ${familyHead.governorate} &nbsp;&nbsp;&nbsp;
@@ -267,8 +263,7 @@ const generateFamilyRecord = async (req, res) => {
             <strong>محل ورقم القيد:</strong> ${familyHead.registrationPlace} / ${familyHead.registrationNumber || '—'}
           </div>
           <div class="qr-box">
-            <img src="https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${transactionId}" alt="QR Code"/>
-            <div class="qr-id">${transactionId}</div>
+            <img src="https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(transactionId)}" alt="QR Code"/>
           </div>
         </div>
 
@@ -291,20 +286,6 @@ const generateFamilyRecord = async (req, res) => {
           </thead>
           <tbody>${rowsHtml}</tbody>
         </table>
-
-        <div class="signatures" style="margin-top: 10px; display: flex; justify-content: space-between; align-items: flex-end;">
-          <div class="signature-box">
-            توقيع صاحب العلاقة<br>
-            <span style="font-size: 9px; color: #555;">....................</span>
-          </div>
-          <div class="signature-box">
-            <div class="stamp">خاتم<br>السجل المدني</div>
-          </div>
-          <div class="signature-box">
-            توقيع الموظف المختص<br>
-            <span style="font-size: 9px; color: #555;">....................</span>
-          </div>
-        </div>
 
         <div class="footer">
           بيان صادر عن النظام الإلكتروني للشؤون المدنية بتاريخ: ${new Date().toLocaleDateString('ar-SY')}<br>
@@ -414,20 +395,7 @@ const generateIndividualRecord = async (req, res) => {
             padding-top: 5px;
             font-size: 10.5px;
           }
-          .stamp {
-            width: 68px;
-            height: 68px;
-            border: 3px double #8B0000;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin: 0 auto 4px;
-            color: #8B0000;
-            font-weight: bold;
-            font-size: 9px;
-            transform: rotate(-8deg);
-          }
+          /* stamp removed - only owner signature will be shown */
 
           .footer { 
             margin-top: 8px; 
@@ -437,6 +405,7 @@ const generateIndividualRecord = async (req, res) => {
             border-top: 1px solid #999; 
             padding-top: 5px; 
           }
+          /* watermark & stamp-id removed */
         </style>
       </head>
       <body>
@@ -447,6 +416,8 @@ const generateIndividualRecord = async (req, res) => {
           <h3>بيان قيد فردي مدني</h3>
         </div>
 
+        
+
         <div class="content">
           <div class="main-content">
             <table>
@@ -454,7 +425,7 @@ const generateIndividualRecord = async (req, res) => {
               <tr><th>الاسم</th><td>${user.firstName} ${user.nisba || ''}</td></tr>
               <tr><th>اسم الأب</th><td>${user.fatherName}</td></tr>
               <tr><th>اسم الجد</th><td>${user.grandfatherName || '—'}</td></tr>
-              <tr><th>اسم الأم ونسبتها</th><td>${user.motherName} ${user.motherNisba ? `(${user.motherNisba})` : ''}</td></tr>
+              <tr><th>اسم الأم</th><td>${user.motherName}</td></tr>
               <tr><th>محل وتاريخ الولادة</th><td>${user.placeOfBirth} - ${user.dateOfBirth.toISOString().split('T')[0]}</td></tr>
               <tr><th>الجنسية</th><td>${user.nationality}</td></tr>
               <tr><th>المحافظة</th><td>${user.governorate}</td></tr>
@@ -486,26 +457,8 @@ const generateIndividualRecord = async (req, res) => {
             </div>
             
             <div style="margin: 8px 0 5px;">
-              <img src="https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${transactionId}" alt="QR Code" style="width: 82px; height: 82px; border: 1px solid #444;"/>
+                <img src="https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(transactionId)}" alt="QR Code" style="width: 82px; height: 82px; border: 1px solid #444;"/>
             </div>
-            <div style="font-size: 9px; font-weight: bold; color: #0b3d2e; word-break: break-all;">
-              ${transactionId}
-            </div>
-          </div>
-        </div>
-
-        <!-- منطقة التوقيعات -->
-        <div class="signatures" style="margin-top: 12px; display: flex; justify-content: space-between; align-items: flex-end;">
-          <div class="signature-box">
-            توقيع صاحب العلاقة<br>
-            <span style="font-size: 9px; color: #555;">${user.firstName} ${user.nisba || ''}</span>
-          </div>
-          <div class="signature-box">
-            <div class="stamp">خاتم<br>السجل المدني</div>
-          </div>
-          <div class="signature-box" >
-            توقيع الموظف المختص<br>
-            <span style="font-size: 9px; color: #555;">....................</span>
           </div>
         </div>
 
@@ -561,6 +514,7 @@ const generateMarriageCertificate = async (req, res) => {
                         registrationPlace: true,
                         registrationNumber: true,
                         religion: true,
+                        signature: true,
                     }
                 },
                 wife: {
@@ -580,6 +534,7 @@ const generateMarriageCertificate = async (req, res) => {
                         registrationPlace: true,
                         registrationNumber: true,
                         religion: true,
+                        signature: true,
                     }
                 }
             }
@@ -590,6 +545,7 @@ const generateMarriageCertificate = async (req, res) => {
         const husband = currentUser.gender === 'MALE' ? currentUser : otherSpouse;
         const wife = currentUser.gender === 'FEMALE' ? currentUser : otherSpouse;
         const documentIdentifier = `marriage:${marriage.id}:${currentUserId}:${Date.now()}`;
+        const transactionId = documentIdentifier;
         const qrPayload = JSON.stringify({
             type: 'marriage_certificate',
             marriageId: marriage.id,
@@ -627,21 +583,26 @@ const generateMarriageCertificate = async (req, res) => {
           th, td { border: 1px solid #444; padding: 4px 6px; text-align: right; vertical-align: middle; line-height: 1.25; font-size: 10px; }
           th { background: #e8dcc8; font-weight: 700; }
           .footer { margin-top: 6px; padding-top: 6px; text-align: center; border-top: 1px solid #999; font-size: 9px; color: #555; line-height: 1.25; }
+          .watermark {
+            position: fixed;
+            top: 45%;
+            left: 50%;
+            transform: translate(-50%, -50%) rotate(-35deg);
+            font-size: 70px;
+            color: #0b3d2e;
+            opacity: 0.05;
+            z-index: 0;
+            pointer-events: none;
+            white-space: nowrap;
+          }
           .signatures { margin-top: 8px; display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; font-size: 10px; font-weight: 600; }
           .signature-box { flex: 1; border-top: 1px solid #333; padding-top: 4px; text-align: center; }
-          .stamp {
-            width: 62px;
-            height: 62px;
-            border: 3px double #8B0000;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin: 0 auto 4px;
-            color: #8B0000;
-            font-weight: bold;
-            font-size: 9px;
-            transform: rotate(-8deg);
+          /* stamp removed - only owner signature will be shown */
+          .stamp-id {
+            font-size: 8px;
+            color: #555;
+            margin-top: 3px;
+            line-height: 1.2;
           }
         </style>
       </head>
@@ -656,6 +617,8 @@ const generateMarriageCertificate = async (req, res) => {
             <div class="header-qr-label">تحقق</div>
           </div>
         </div>
+
+        
 
         <div class="section-title">بيانات الزوج والزوجة</div>
         <table>
@@ -678,24 +641,6 @@ const generateMarriageCertificate = async (req, res) => {
           <tr><th>تاريخ الزواج</th><td>${marriage.marriageDate ? marriage.marriageDate.toISOString().split('T')[0] : '—'}</td></tr>
           <tr><th>محل الزواج</th><td>${formatCell(marriage.marriagePlace)}</td></tr>
         </table>
-
-        <div class="signatures">
-          <div class="signature-box">
-            توقيع الزوج<br>
-            <span style="font-size: 9px; color: #555;">....................</span>
-          </div>
-          <div class="signature-box">
-            توقيع الزوجة<br>
-            <span style="font-size: 9px; color: #555;">....................</span>
-          </div>
-          <div class="signature-box">
-            <div class="stamp">خاتم<br>السجل المدني</div>
-          </div>
-          <div class="signature-box">
-            توقيع الموظف المختص<br>
-            <span style="font-size: 9px; color: #555;">....................</span>
-          </div>
-        </div>
 
         <div class="footer">
           صادر عن النظام الإلكتروني للشؤون المدنية بتاريخ ${new Date().toLocaleDateString('ar-SY')}<br>
@@ -788,13 +733,27 @@ const generateDeathReport = async (req, res) => {
 
           .signatures { margin-top: 12px; display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; }
           .signature-box { flex: 1; text-align: center; border-top: 1px solid #333; padding-top: 5px; font-size: 10.5px; }
-          .stamp { 
-            width: 68px; height: 68px; border: 3px double #8B0000; border-radius: 50%; 
-            display: flex; align-items: center; justify-content: center; margin: 0 auto 4px;
-            color: #8B0000; font-weight: bold; font-size: 9px; transform: rotate(-8deg);
-          }
+          /* stamp removed - only owner signature will be shown */
 
           .footer { margin-top: 8px; text-align: center; font-size: 10px; color: #444; border-top: 1px solid #999; padding-top: 5px; }
+          .watermark {
+            position: fixed;
+            top: 45%;
+            left: 50%;
+            transform: translate(-50%, -50%) rotate(-35deg);
+            font-size: 70px;
+            color: #0b3d2e;
+            opacity: 0.05;
+            z-index: 0;
+            pointer-events: none;
+            white-space: nowrap;
+          }
+          .stamp-id {
+            font-size: 8px;
+            color: #555;
+            margin-top: 3px;
+            line-height: 1.2;
+          }
         </style>
       </head>
       <body>
@@ -805,6 +764,8 @@ const generateDeathReport = async (req, res) => {
           <h3>تقرير وفاة</h3>
         </div>
 
+        
+
         <div class="content">
           <div class="main-content">
             <table>
@@ -812,7 +773,7 @@ const generateDeathReport = async (req, res) => {
               <tr><th>الاسم</th><td>${deceased.firstName} ${deceased.nisba || ''}</td></tr>
               <tr><th>اسم الأب</th><td>${deceased.fatherName}</td></tr>
               <tr><th>اسم الجد</th><td>${deceased.grandfatherName || '—'}</td></tr>
-              <tr><th>اسم الأم ونسبتها</th><td>${deceased.motherName} ${deceased.motherNisba ? `(${deceased.motherNisba})` : ''}</td></tr>
+              <tr><th>اسم الأم</th><td>${deceased.motherName}</td></tr>
               <tr><th>محل وتاريخ الولادة</th><td>${deceased.placeOfBirth} - ${deceased.dateOfBirth.toISOString().split('T')[0]}</td></tr>
               <tr><th>الجنسية</th><td>${deceased.nationality}</td></tr>
               <tr><th>المحافظة</th><td>${deceased.governorate}</td></tr>
@@ -834,16 +795,10 @@ const generateDeathReport = async (req, res) => {
               ${deceased.personalPhoto ? `<img src="http://localhost:5000${deceased.personalPhoto}" alt="صورة" />` : '<span>لا توجد صورة</span>'}
             </div>
             <div style="margin: 8px 0 5px;">
-              <img src="https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${transactionId}" alt="QR" style="width: 82px; height: 82px;"/>
+              <img src="https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(transactionId)}" alt="QR" style="width: 82px; height: 82px;"/>
             </div>
-            <div style="font-size: 9px; font-weight: bold; color: #8B0000; word-break: break-all;">${transactionId}</div>
+            
           </div>
-        </div>
-
-        <div class="signatures" style="margin-top: 10px;">
-          <div class="signature-box">توقيع صاحب العلاقة<br><span style="color:#555;">${requester.firstName} ${requester.nisba || ''}</span></div>
-          <div class="signature-box"><div class="stamp">خاتم<br>السجل المدني</div></div>
-          <div class="signature-box">توقيع الموظف المختص<br><span style="color:#555;">....................</span></div>
         </div>
 
         <div class="footer">
