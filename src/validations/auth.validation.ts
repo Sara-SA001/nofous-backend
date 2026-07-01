@@ -60,6 +60,7 @@ export const registerUserSchema = z.object({
   personalPhoto: z.any().optional(),
   idFrontPhoto: z.any().optional(),
   idBackPhoto: z.any().optional(),
+  signature: z.any().optional(),
 });
 
 export const loginUserSchema = z.object({

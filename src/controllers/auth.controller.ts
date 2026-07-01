@@ -10,7 +10,8 @@ const getZodIssues = (error: any) => error.issues || error.errors || [];
 export const uploadUserPhotos = upload.fields([
   { name: 'personalPhoto', maxCount: 1 },
   { name: 'idFrontPhoto', maxCount: 1 },
-  { name: 'idBackPhoto', maxCount: 1 }
+  { name: 'idBackPhoto', maxCount: 1 },
+  { name: 'signature', maxCount: 1 }
 ]);
 
 export const registerUser = async (req: Request, res: Response) => {
@@ -70,6 +71,17 @@ export const registerUser = async (req: Request, res: Response) => {
       ? `/uploads/${files['idBackPhoto'][0].filename}`
       : null;
 
+    const signature = files['signature']?.[0]
+      ? `/uploads/${files['signature'][0].filename}`
+      : null;
+
+    if (!signature) {
+      return res.status(400).json({
+        success: false,
+        message: 'التوقيع مطلوب',
+      });
+    }
+
     const userData: any = {
       nationalId,
       firstName,
@@ -88,13 +100,14 @@ export const registerUser = async (req: Request, res: Response) => {
       amanah,
       registrationPlace: registrationPlace || "",
       registrationNumber: registrationNumber || "",
-      cardNumber: cardNumber || "",
+      cardNumber: cardNumber || null,
       issueDate: issueDate ? new Date(issueDate) : undefined,
       fatherId,
       husbandId,
       personalPhoto,
       idFrontPhoto,
       idBackPhoto,
+      signature,
     };
 
     // Only include registrationDate if provided (otherwise Prisma will use @default(now()))
@@ -116,6 +129,7 @@ export const registerUser = async (req: Request, res: Response) => {
         personalPhoto: true,
         idFrontPhoto: true,
         idBackPhoto: true,
+        signature: true,
       }
     });
 
@@ -140,7 +154,8 @@ export const registerUser = async (req: Request, res: Response) => {
         husbandId: newUser.husbandId,
         personalPhoto: newUser.personalPhoto,
         idFrontPhoto: newUser.idFrontPhoto,
-        idBackPhoto: newUser.idBackPhoto,
+          idBackPhoto: newUser.idBackPhoto,
+          signature: newUser.signature,
       },
       token
     });
